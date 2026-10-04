@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 914d865d1e3e9429ba78b8735e5bb2d5
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Scripts/FreeCamera.cs
+  uploadId: 999264

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 050cb84f4668e1c46ba9481752908e4a
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Animations/camera_loop_001.controller
+  uploadId: 999264

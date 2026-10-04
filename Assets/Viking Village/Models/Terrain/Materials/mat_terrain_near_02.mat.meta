@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 4731fb217ebe6924b85d66c2f484f903
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Models/Terrain/Materials/mat_terrain_near_02.mat
+  uploadId: 999264

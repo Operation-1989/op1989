@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: 5b5b1b40faf88294a905762516ca4848
+ScriptedImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 2
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: 625f186215c104763be7675aa2d941aa, type: 3}
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Shaders/Standard_AlphaClip.shadergraph
+  uploadId: 999264

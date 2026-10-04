@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: caaa42002c2d13d439d5f77307462e84
+timeCreated: 1511170722
+licenseType: Store
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 100100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Book of the Dead/Vegetation/Plant_Perennials/PH_Plant_Perennials_a2_1x1x2_C_Prefab.prefab
+  uploadId: 999264

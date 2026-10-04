@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: f1b7d55b20a1440b38c82e0092d37161
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Boat Attack Water System/Shaders/WaterLighting.hlsl
+  uploadId: 999264

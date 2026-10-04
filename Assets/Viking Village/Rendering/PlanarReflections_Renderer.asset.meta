@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: c14ee134214125043b32209b9d34fe0f
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Rendering/PlanarReflections_Renderer.asset
+  uploadId: 999264

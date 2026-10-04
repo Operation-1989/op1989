@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: 218546c4603ef4cbd9ebc00e80bf714d
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Boat Attack Water System/Shaders/GerstnerWaves.hlsl
+  uploadId: 999264

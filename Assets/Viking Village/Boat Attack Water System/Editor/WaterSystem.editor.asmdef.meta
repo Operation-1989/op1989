@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 7ccf8aeedcc0c4661aacb3c94f093356
+AssemblyDefinitionImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Boat Attack Water System/Editor/WaterSystem.editor.asmdef
+  uploadId: 999264

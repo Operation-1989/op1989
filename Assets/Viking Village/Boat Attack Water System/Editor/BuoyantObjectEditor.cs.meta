@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 8763206c9fce6479698aa739878ca7c7
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Boat Attack Water System/Editor/BuoyantObjectEditor.cs
+  uploadId: 999264

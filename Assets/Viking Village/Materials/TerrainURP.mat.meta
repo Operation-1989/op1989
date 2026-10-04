@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: aac58f04a7f2b4ba08948773cd72f022
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Materials/TerrainURP.mat
+  uploadId: 999264

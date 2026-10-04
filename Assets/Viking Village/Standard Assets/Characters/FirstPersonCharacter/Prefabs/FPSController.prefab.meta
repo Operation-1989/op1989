@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 5e9e851c0e142814dac026a256ba2ac0
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Standard Assets/Characters/FirstPersonCharacter/Prefabs/FPSController.prefab
+  uploadId: 999264

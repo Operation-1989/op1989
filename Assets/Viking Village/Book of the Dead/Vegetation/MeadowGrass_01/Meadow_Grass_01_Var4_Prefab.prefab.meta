@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: 10828e5ac37bd8d4da40f0e24eedc4e6
+timeCreated: 1506181878
+licenseType: Store
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 100100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Book of the Dead/Vegetation/MeadowGrass_01/Meadow_Grass_01_Var4_Prefab.prefab
+  uploadId: 999264
