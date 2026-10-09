@@ -6,7 +6,12 @@ public class AgentChaseController : MonoBehaviour
     public Transform player;
     public AgentPathFollower pathFollower;
 
+    [Header("Detection Settings")]
     public float detectionRadius = 6f;
+    [Range(0f, 360f)] public float fieldOfViewAngle = 120f;
+    public LayerMask obstacleLayers = ~0;
+
+    [Header("Movement Settings")]
     public float chaseSpeed = 4f;
     public float investigationTime = 3f;
     public float stoppingDistance = 1.5f;
@@ -28,12 +33,7 @@ public class AgentChaseController : MonoBehaviour
         if (player == null || pathFollower == null)
             return;
 
-        Vector3 playerDirection = player.position - transform.position;
-        playerDirection.y = 0f;
-
-        float distance = playerDirection.magnitude;
-
-        if (distance <= detectionRadius)
+        if (CanSeePlayer())
         {
             lastKnownPosition = player.position;
             currentState = AgentState.Chase;
@@ -88,6 +88,35 @@ public class AgentChaseController : MonoBehaviour
         }
     }
 
+    bool CanSeePlayer()
+    {
+        Vector3 eyePosition = transform.position + Vector3.up * 0.5f;
+        Vector3 targetPosition = player.position + Vector3.up * 0.5f;
+        Vector3 direction = targetPosition - eyePosition;
+
+        float distance = direction.magnitude;
+
+        if (distance > detectionRadius)
+            return false;
+
+        if (Vector3.Angle(transform.forward, direction) > fieldOfViewAngle / 2f)
+            return false;
+
+        if (Physics.Raycast(
+            eyePosition,
+            direction.normalized,
+            out RaycastHit hit,
+            distance,
+            obstacleLayers,
+            QueryTriggerInteraction.Ignore))
+        {
+            if (hit.transform != player && !hit.transform.IsChildOf(player))
+                return false;
+        }
+
+        return true;
+    }
+
     void MoveTowards(Vector3 target, float stopDistance)
     {
         Vector3 direction = target - transform.position;
@@ -115,5 +144,18 @@ public class AgentChaseController : MonoBehaviour
                 5f * Time.deltaTime
             );
         }
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, detectionRadius);
+
+        Vector3 leftDirection = Quaternion.Euler(0, -fieldOfViewAngle / 2f, 0) * transform.forward;
+        Vector3 rightDirection = Quaternion.Euler(0, fieldOfViewAngle / 2f, 0) * transform.forward;
+
+        Gizmos.color = Color.green;
+        Gizmos.DrawRay(transform.position, leftDirection * detectionRadius);
+        Gizmos.DrawRay(transform.position, rightDirection * detectionRadius);
     }
 }
