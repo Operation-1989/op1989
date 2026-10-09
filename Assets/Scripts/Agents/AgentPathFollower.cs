@@ -14,6 +14,8 @@ public class AgentPathFollower : MonoBehaviour
     private int currentWaypoint = 0;
     private float currentSpeed = 0f;
 
+    private List<Transform> runtimeWaypoints = new List<Transform>();
+
     void Update()
     {
         if (waypoints == null || waypoints.Count == 0)
@@ -70,5 +72,33 @@ public class AgentPathFollower : MonoBehaviour
             targetRotation,
             rotationSpeed * Time.deltaTime
         );
+    }
+
+    public void SetPath(List<Vector3> newPath)
+    {
+        if (newPath == null || newPath.Count == 0)
+            return;
+
+        foreach (Transform point in runtimeWaypoints)
+        {
+            if (point != null)
+                Destroy(point.gameObject);
+        }
+
+        runtimeWaypoints.Clear();
+        waypoints.Clear();
+
+        foreach (Vector3 position in newPath)
+        {
+            GameObject point = new GameObject("RuntimeWaypoint");
+            point.transform.position = position;
+
+            runtimeWaypoints.Add(point.transform);
+            waypoints.Add(point.transform);
+        }
+
+        currentWaypoint = 0;
+        currentSpeed = 0f;
+        loopPath = false;
     }
 }
