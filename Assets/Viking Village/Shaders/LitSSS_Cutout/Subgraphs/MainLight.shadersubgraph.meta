@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: 4f3bad550e8b945e3870ebdfb46584d4
+ScriptedImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 2
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: 60072b568d64c40a485e0fc55012dc9f, type: 3}
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Shaders/LitSSS_Cutout/Subgraphs/MainLight.shadersubgraph
+  uploadId: 999264

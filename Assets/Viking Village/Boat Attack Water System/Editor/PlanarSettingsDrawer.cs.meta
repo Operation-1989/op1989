@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: e0bc0b238a7fa4c69938228f2c8d657e
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Boat Attack Water System/Editor/PlanarSettingsDrawer.cs
+  uploadId: 999264

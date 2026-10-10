@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 6a87082c352454e3db3041e7033645e8
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Animations/build_crane_01.controller
+  uploadId: 999264

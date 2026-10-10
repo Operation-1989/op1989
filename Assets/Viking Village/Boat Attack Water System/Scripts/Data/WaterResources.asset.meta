@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 40615c805d6e84ce7800418367985fe1
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Boat Attack Water System/Scripts/Data/WaterResources.asset
+  uploadId: 999264

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: e8e1cb795e897c14f99c00967e0cac24
+timeCreated: 1496328040
+licenseType: Store
+NativeFormatImporter:
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 29140
+  packageName: Viking Village | 3D Sample Project
+  packageVersion: 2.0.0
+  assetPath: Assets/Viking Village/Book of the Dead/Vegetation/MeadowGrass_01/Materials/Meadow_Grass_01_Low.mat
+  uploadId: 999264
