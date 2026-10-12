@@ -5,16 +5,23 @@ public class AgentChaseController : MonoBehaviour
 {
     public Transform player;
     public AgentPathFollower pathFollower;
+    public Animator animator;
 
     [Header("Detection Settings")]
-    public float detectionRadius = 6f;
+    public float detectionRadius = 15f;
     [Range(0f, 360f)] public float fieldOfViewAngle = 120f;
     public LayerMask obstacleLayers = ~0;
 
     [Header("Movement Settings")]
     public float chaseSpeed = 4f;
     public float investigationTime = 3f;
-    public float stoppingDistance = 1.5f;
+    public float stoppingDistance = 6f;
+
+    [Header("Shooting Settings")]
+    public float attackRange = 7f;
+    public float shootingInterval = 1.5f;
+
+    private float shootingTimer;
 
     private enum AgentState
     {
@@ -28,10 +35,21 @@ public class AgentChaseController : MonoBehaviour
     private float investigationTimer;
     private bool reachedInvestigationPoint;
 
+    void Awake()
+    {
+        if (pathFollower == null)
+            pathFollower = GetComponent<AgentPathFollower>();
+
+        if (animator == null)
+            animator = GetComponentInChildren<Animator>();
+    }
+
     void Update()
     {
         if (player == null || pathFollower == null)
             return;
+
+        shootingTimer -= Time.deltaTime;
 
         if (CanSeePlayer())
         {
@@ -54,7 +72,7 @@ public class AgentChaseController : MonoBehaviour
 
             case AgentState.Chase:
                 pathFollower.enabled = false;
-                MoveTowards(player.position, stoppingDistance);
+                HandleChase();
                 break;
 
             case AgentState.Investigate:
@@ -64,7 +82,8 @@ public class AgentChaseController : MonoBehaviour
                 {
                     MoveTowards(lastKnownPosition, 0.3f);
 
-                    Vector3 difference = lastKnownPosition - transform.position;
+                    Vector3 difference =
+                        lastKnownPosition - transform.position;
                     difference.y = 0f;
 
                     if (difference.magnitude <= 0.3f)
@@ -88,18 +107,48 @@ public class AgentChaseController : MonoBehaviour
         }
     }
 
+    void HandleChase()
+    {
+        Vector3 direction = player.position - transform.position;
+        direction.y = 0f;
+
+        float distance = direction.magnitude;
+
+        if (distance > stoppingDistance)
+        {
+            MoveTowards(player.position, stoppingDistance);
+        }
+        else
+        {
+            FaceTarget(player.position);
+        }
+
+        if (distance <= attackRange && shootingTimer <= 0f)
+        {
+            if (animator != null)
+                animator.SetTrigger("Shoot");
+
+            shootingTimer = shootingInterval;
+            Debug.Log("Soldier shooting at player!");
+        }
+    }
+
     bool CanSeePlayer()
     {
-        Vector3 eyePosition = transform.position + Vector3.up * 0.5f;
-        Vector3 targetPosition = player.position + Vector3.up * 0.5f;
-        Vector3 direction = targetPosition - eyePosition;
+        Vector3 eyePosition =
+            transform.position + Vector3.up * 0.5f;
 
+        Vector3 targetPosition =
+            player.position + Vector3.up * 0.5f;
+
+        Vector3 direction = targetPosition - eyePosition;
         float distance = direction.magnitude;
 
         if (distance > detectionRadius)
             return false;
 
-        if (Vector3.Angle(transform.forward, direction) > fieldOfViewAngle / 2f)
+        if (Vector3.Angle(transform.forward, direction) >
+            fieldOfViewAngle / 2f)
             return false;
 
         if (Physics.Raycast(
@@ -110,7 +159,8 @@ public class AgentChaseController : MonoBehaviour
             obstacleLayers,
             QueryTriggerInteraction.Ignore))
         {
-            if (hit.transform != player && !hit.transform.IsChildOf(player))
+            if (hit.transform != player &&
+                !hit.transform.IsChildOf(player))
                 return false;
         }
 
@@ -134,9 +184,18 @@ public class AgentChaseController : MonoBehaviour
             transform.position += direction.normalized * step;
         }
 
+        FaceTarget(target);
+    }
+
+    void FaceTarget(Vector3 target)
+    {
+        Vector3 direction = target - transform.position;
+        direction.y = 0f;
+
         if (direction.sqrMagnitude > 0.001f)
         {
-            Quaternion targetRotation = Quaternion.LookRotation(direction);
+            Quaternion targetRotation =
+                Quaternion.LookRotation(direction);
 
             transform.rotation = Quaternion.Slerp(
                 transform.rotation,
@@ -151,11 +210,25 @@ public class AgentChaseController : MonoBehaviour
         Gizmos.color = Color.yellow;
         Gizmos.DrawWireSphere(transform.position, detectionRadius);
 
-        Vector3 leftDirection = Quaternion.Euler(0, -fieldOfViewAngle / 2f, 0) * transform.forward;
-        Vector3 rightDirection = Quaternion.Euler(0, fieldOfViewAngle / 2f, 0) * transform.forward;
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(transform.position, attackRange);
+
+        Vector3 leftDirection =
+            Quaternion.Euler(0, -fieldOfViewAngle / 2f, 0)
+            * transform.forward;
+
+        Vector3 rightDirection =
+            Quaternion.Euler(0, fieldOfViewAngle / 2f, 0)
+            * transform.forward;
 
         Gizmos.color = Color.green;
-        Gizmos.DrawRay(transform.position, leftDirection * detectionRadius);
-        Gizmos.DrawRay(transform.position, rightDirection * detectionRadius);
+        Gizmos.DrawRay(
+            transform.position,
+            leftDirection * detectionRadius
+        );
+        Gizmos.DrawRay(
+            transform.position,
+            rightDirection * detectionRadius
+        );
     }
 }
