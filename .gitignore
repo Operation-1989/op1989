@@ -60,3 +60,7 @@ crashlytics-build.properties
 *.aab
 *.unitypackage
 *.app
+
+# Local Junction
+/op1989/
+
