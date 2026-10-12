@@ -40,15 +40,15 @@ namespace Operation1989.Interaction.Core
         public void OnGrab(Transform holdPoint)
         {
             rb.useGravity = false;
-            rb.drag = 10f;
-            rb.angularDrag = 5f;
+            rb.linearDamping = 10f;
+            rb.angularDamping = 5f;
         }
 
         public void OnRelease(Vector3 throwForce)
         {
             rb.useGravity = true;
-            rb.drag = 1f;
-            rb.angularDrag = 0.05f;
+            rb.linearDamping = 1f;
+            rb.angularDamping = 0.05f;
             rb.AddForce(throwForce, ForceMode.Impulse);
         }
     }

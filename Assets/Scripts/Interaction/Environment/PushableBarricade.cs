@@ -40,11 +40,11 @@ namespace Operation1989.Interaction.Environment
 
             if (isBeingHeld)
             {
-                rb.drag = 5.0f;
+                rb.linearDamping = 5.0f;
             }
             else
             {
-                rb.drag = 0.5f;
+                rb.linearDamping = 0.5f;
             }
         }
 

@@ -96,7 +96,7 @@ namespace Operation1989.Interaction.Core
             if (heldRigidbody != null && holdPoint != null)
             {
                 Vector3 moveDir = holdPoint.position - heldRigidbody.position;
-                heldRigidbody.velocity = moveDir * moveSpeed;
+                heldRigidbody.linearVelocity = moveDir * moveSpeed;
             }
         }
     }
