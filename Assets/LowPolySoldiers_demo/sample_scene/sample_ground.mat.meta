@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f0354e670bbdd744186fd0ceaa194d54
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 73611
+  packageName: Low Poly Soldiers Demo
+  packageVersion: 1.0
+  assetPath: Assets/LowPolySoldiers_demo/sample_scene/sample_ground.mat
+  uploadId: 982312
