@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 69c0fd068809d2a4cafbb12fd8e38326
+timeCreated: 1477598293
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 73611
+  packageName: Low Poly Soldiers Demo
+  packageVersion: 1.0
+  assetPath: Assets/LowPolySoldiers_demo/models/Materials/demo_soldier_512.mat
+  uploadId: 982312
