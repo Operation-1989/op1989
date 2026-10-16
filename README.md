@@ -30,9 +30,9 @@ A 3D interactive simulation project built with Unity 6 and the Universal Render 
 ### 3. Running the Main Scene
 1. In the **Project** window, navigate to:
    ```
-   Assets/Viking Village/Scenes/The_Viking_Village.unity
+   Assets/army base.unity
    ```
-2. Double-click **`The_Viking_Village`** to load the scene.
+2. Double-click **`army base`** to load the scene.
 3. Click the **Play** button at the top of the Unity Editor.
 
 ### 4. Player Controls
@@ -70,17 +70,10 @@ A 3D interactive simulation project built with Unity 6 and the Universal Render 
     │   └── UniversalRenderPipelineGlobalSettings.asset
     ├── Scenes/                   # Default scenes directory (legacy template)
     ├── TutorialInfo/             # URP onboarding and tutorial scripts
-    └── Viking Village/           # Main project environment and systems
-        ├── Boat Attack Water System/ # Gerstner waves, buoyancy, and planar reflections
-        ├── Book of the Dead/     # Environment shaders, textures, and models
-        ├── Models/               # Buildings, props, terrain, vegetation meshes
-        ├── Prefabs/              # Reusable environmental and gameplay prefabs
-        ├── Materials/            # Surface materials and PBR textures
-        ├── Scenes/               # 'The_Viking_Village.unity' scene
-        ├── Scripts/              # Controllers, camera scripts, and gameplay logic
-        ├── Shaders/              # Custom URP shaders
-        ├── Standard Assets/      # First-person character controller and utilities
-        └── Textures/             # High-resolution PBR textures and skyboxes
+    ├── Scripts/                  # Gameplay and agent controllers
+    ├── Prefabs/                  # Reusable gameplay prefabs
+    ├── Flooded_Grounds/           # Environment assets
+    └── army base.unity            # Military-base environment scene
 ```
 
 > **Note on Ignored Folders:**  
@@ -94,9 +87,8 @@ A 3D interactive simulation project built with Unity 6 and the Universal Render 
    - Configured with Universal Render Pipeline (URP 17.6.0).
    - Dedicated **PC** (`PC_RPAsset`) and **Mobile** (`Mobile_RPAsset`) quality tiers in `QualitySettings.asset`.
    - Linear color space with forward rendering and HDR support.
-2. **Water Simulation & Buoyancy**:
-   - Powered by the Boat Attack Water System utilizing C# Job System (`GerstnerWavesJobs.cs`) and Burst compiler acceleration for real-time wave evaluation.
-   - Planar reflections support in `PlanarReflections.cs`.
+2. **Environment**:
+   - The active military-base environment is in `Assets/army base.unity`.
 3. **Character Controller & Input**:
    - First-person exploration controller integrated with the **New Input System** (`com.unity.inputsystem`).
    - Supports head-bobbing, dynamic footstep audio, and smooth mouse-look dampening.
@@ -149,7 +141,7 @@ During the setup review, the following points were identified and resolved/docum
 
 | Component | Status | Details |
 |---|---|---|
-| **`EditorBuildSettings.asset`** | ⚠️ Resolved | Previously referenced `Assets/Scenes/SampleScene.unity` which did not exist. Updated to `Assets/Viking Village/Scenes/The_Viking_Village.unity` (`guid: 217f50a4b9fbfda41b4f6faee8d22d02`). |
+| **`EditorBuildSettings.asset`** | Cleaned | Removed the deleted environment scene entry; no scenes are currently configured for builds. |
 | **`.gitignore`** | ⚠️ Resolved | No `.gitignore` existed previously. Added comprehensive Unity-tailored `.gitignore` excluding `Library/`, `Temp/`, `Logs/`, `UserSettings/`, and IDE files. |
 | **`.gitattributes`** | ⚠️ Resolved | Created `.gitattributes` to handle LF line endings for text/YAML files and configure Git LFS tracking for binary assets (`.fbx`, `.png`, `.tga`, `.wav`, etc.). |
 | **Meta File Integrity** |  Verified | Scanned all assets in `Assets/`; confirmed 100% paired `.meta` files with zero missing or orphaned metadata. |
