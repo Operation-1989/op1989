@@ -54,7 +54,7 @@ public static class PlayerSoldierSetup
         var visual = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>("Assets/LowPolySoldiers_demo/Soldier_demo_Prefab.prefab"));
         visual.name = "Soldier Visual";
         visual.transform.SetParent(player.transform, false);
-        visual.transform.localRotation = Quaternion.Euler(0,-90,0);
+        visual.transform.localRotation = Quaternion.identity;
         visual.transform.localScale = Vector3.one * 0.75f;
         visual.transform.localPosition = new Vector3(0,-1,0);
         var animator = visual.GetComponentInChildren<Animator>();
@@ -119,10 +119,10 @@ public static class PlayerSoldierSetup
         controller.AddParameter("Fire",AnimatorControllerParameterType.Trigger);
         var sm = controller.layers[0].stateMachine;
         var locomotion = sm.AddState("Locomotion");
-        var blend = new BlendTree { name="Idle Walk Run",blendType=BlendTreeType.Simple1D,blendParameter="Speed",useAutomaticThresholds=false };
+        var blend = new BlendTree { name="Idle Run Sprint",blendType=BlendTreeType.Simple1D,blendParameter="Speed",useAutomaticThresholds=false };
         AssetDatabase.AddObjectToAsset(blend,controller);
         blend.AddChild(Clip("Assets/LowPolySoldiers_demo/animation/demo_combat_idle.FBX"),0);
-        blend.AddChild(Clip("Assets/Animations/Soldier/Rifle Walk.fbx"),1);
+        blend.AddChild(Clip("Assets/LowPolySoldiers_demo/animation/demo_combat_run.FBX"),1);
         blend.AddChild(Clip("Assets/LowPolySoldiers_demo/animation/demo_combat_run.FBX"),2);
         locomotion.motion = blend; sm.defaultState = locomotion;
         var mask = new AvatarMask {name="Rifle Upper Body"};

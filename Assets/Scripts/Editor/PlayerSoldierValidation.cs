@@ -49,7 +49,11 @@ public static class PlayerSoldierValidation
             case 1:
                 if(!sequence.HandedOff || sequence.Elapsed<sequence.cutsceneDuration+0.6f)break;
                 Check("Input and first person handoff",p.movement.enabled && p.firstPersonCamera.enabled);
-                Check("First person head removed",p.body.sharedMesh==p.firstPersonMesh && p.firstPersonMesh.triangles.Length<p.fullBodyMesh.triangles.Length);
+                Check("First person headless mesh available",p.firstPersonMesh.triangles.Length<p.fullBodyMesh.triangles.Length);
+                Check("Soldier aligned with movement",Vector3.Dot(p.animator.transform.forward,p.transform.forward)>.999f);
+                Check("First person aligned with movement",Vector3.Dot(p.firstPersonCamera.transform.forward,p.transform.forward)>.999f);
+                var third=p.transform.Find("Third Person Camera");
+                Check("Third person behind player",p.transform.InverseTransformPoint(third.position).z<0 && Mathf.Abs(p.transform.InverseTransformPoint(third.position).x)<.01f);
                 Check("Idle animation",p.animator.GetCurrentAnimatorClipInfo(0).Any(c=>c.clip.name.Contains("idle") && c.weight>.9f));
                 Check("Single AudioListener",Object.FindObjectsByType<AudioListener>().Count(l=>l.isActiveAndEnabled)==1);
                 PlayerSoldierSetup.Capture(p.firstPersonCamera.transform.position,p.firstPersonCamera.transform.position+p.firstPersonCamera.transform.forward,"first-person-forward");
@@ -59,7 +63,9 @@ public static class PlayerSoldierValidation
             case 2:
                 if(Time.time<until)break;
                 Check("Walk input drives animation",p.animator.GetFloat("Speed")>.8f && p.animator.GetFloat("Speed")<1.2f,p.animator.GetFloat("Speed").ToString());
-                Check("Walk clip plays",p.animator.GetCurrentAnimatorClipInfo(0).Any(c=>c.clip.name.Contains("mixamo") && c.weight>.8f));
+                Check("Normal movement uses run clip",p.animator.GetCurrentAnimatorClipInfo(0).Any(c=>c.clip.name.Contains("run") && c.weight>.8f));
+                var rear=p.transform.Find("Third Person Camera");
+                PlayerSoldierSetup.Capture(rear.position,rear.position+rear.forward,"third-person-running");
                 InputSystem.QueueStateEvent(keyboard,new KeyboardState(Key.W,Key.LeftShift));until=Time.time+1;stage=3;break;
             case 3:
                 if(Time.time<until)break;

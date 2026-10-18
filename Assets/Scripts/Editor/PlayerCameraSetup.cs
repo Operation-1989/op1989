@@ -21,7 +21,7 @@ public static class PlayerCameraSetup
         if (!existing) Undo.RegisterCreatedObjectUndo(go, "Add third person camera");
         Undo.RecordObject(go.transform, "Position third person camera");
         go.transform.SetParent(player.transform, false);
-        go.transform.localPosition = new Vector3(0.65f, 1.5f, -3.5f);
+        go.transform.localPosition = new Vector3(0f, 1.5f, -3.5f);
         go.transform.localScale = Vector3.one;
         go.transform.LookAt(player.transform.TransformPoint(new Vector3(0, 0.1f, 0)));
         var camera = go.GetComponent<Camera>();
