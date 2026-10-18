@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
 
 /// <summary>Visuals and animation for the existing first person controller; no AI or root motion.</summary>
 [DefaultExecutionOrder(-20)]
@@ -24,6 +25,8 @@ public sealed class PlayerSoldierPresentation : MonoBehaviour
 
     void OnEnable()
     {
+        RenderPipelineManager.beginCameraRendering += BeginCameraRendering;
+        RenderPipelineManager.endCameraRendering += EndCameraRendering;
         previousPosition = transform.position;
         nextFire = 0;
         if (!movement) movement = GetComponent<FirstPersonController>();
@@ -52,12 +55,23 @@ public sealed class PlayerSoldierPresentation : MonoBehaviour
         bool moving = movement && movement.isActiveAndEnabled && speed > 0.1f && delta.magnitude < 2f;
         if (animator) animator.SetFloat(Speed, moving ? (sprinting ? 2f : 1f) : 0f, 0.1f, Time.deltaTime);
         previousPosition = transform.position;
+    }
+
+    void BeginCameraRendering(ScriptableRenderContext context, Camera camera)
+    {
         if (body && fullBodyMesh && firstPersonMesh)
-            body.sharedMesh = firstPersonCamera && firstPersonCamera.isActiveAndEnabled ? firstPersonMesh : fullBodyMesh;
+            body.sharedMesh = camera == firstPersonCamera ? firstPersonMesh : fullBodyMesh;
+    }
+
+    void EndCameraRendering(ScriptableRenderContext context, Camera camera)
+    {
+        if (body && fullBodyMesh) body.sharedMesh = fullBodyMesh;
     }
 
     void OnDisable()
     {
+        RenderPipelineManager.beginCameraRendering -= BeginCameraRendering;
+        RenderPipelineManager.endCameraRendering -= EndCameraRendering;
         if (body && fullBodyMesh) body.sharedMesh = fullBodyMesh;
     }
 }
