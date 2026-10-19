@@ -24,8 +24,16 @@ public sealed class IntroTruckSequence : MonoBehaviour
     public Vector3 cameraPosition = new Vector3(24, 22, -117);
     public Vector3 cameraDrift = new Vector3(-5, 0, 5);
     public Vector3 cameraLookOffset = new Vector3(0, 1.5f, 4);
+    public Vector3 followOffset = new Vector3(-2, 7, -12);
+    public Vector3 shoulderOffset = new Vector3(.6f, 1.5f, -4);
+    [Header("Briefing")]
+    public string missionTitle = "OPERATION 1989";
+    [TextArea] public string missionBriefing = "A secret is stored on a computer in the base's main building. Your mission is to steal it.";
+    [TextArea] public string entryBriefing = "First, get inside. Secretly follow the supply truck through the gate. Stay out of sight and use its arrival as your opening.";
+    public IntroTruckAudio truckAudio;
     [Header("Gate timing")]
     [Min(0)] public float gateOpenDelay = 1;
+    [Tooltip("Maximum entry window after the camera handoff. Normally the truck's first inside right turn closes the gate sooner.")]
     [Min(1)] public float entryWindow = 18;
     public Vector3 entryPlanePoint = new Vector3(4, 0, -90);
     public Vector3 insideDirection = Vector3.forward;
@@ -48,12 +56,23 @@ public sealed class IntroTruckSequence : MonoBehaviour
     float elapsed, windowEnd, currentSpeed;
     int targetPoint;
     bool entered;
+    bool gateClosingRequested;
+    public bool GateClosingRequested => gateClosingRequested;
     public float Elapsed => elapsed;
     public int TargetPoint => targetPoint;
     public string BlockedBy { get; private set; }
     Vector3 playerStart;
     Quaternion playerRotation;
     bool initialized;
+    Quaternion cameraStartRotation;
+    readonly IntroMissionHud missionHud = new IntroMissionHud();
+    public bool MissionCapturesPointer => missionHud.CapturesPointer;
+    public bool MissionVisible => missionHud.Visible;
+    public bool MissionExpanded => missionHud.Expanded;
+    public bool Entered => entered;
+    public float CurrentSpeed => currentSpeed;
+    public float HandoffPositionError { get; private set; }
+    public float HandoffAngleError { get; private set; }
     static readonly Vector3[] GroundProbes =
     {
         new Vector3(-1.018f, 1.5f, -1.67f), new Vector3(1.018f, 1.5f, -1.67f),
@@ -77,6 +96,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
         }
         playerStart = player.position;
         playerRotation = player.rotation;
+        cameraStartRotation = playerCamera.transform.localRotation;
         if (playerInput == null) playerInput = new Behaviour[0];
         inputStates = new bool[playerInput.Length];
         for (int i = 0; i < playerInput.Length; i++)
@@ -104,8 +124,11 @@ public sealed class IntroTruckSequence : MonoBehaviour
         currentSpeed = 0;
         targetPoint = 1;
         handedOff = parked = missedEntry = entered = false;
+        gateClosingRequested = false;
         BlockedBy = "";
         windowEnd = float.PositiveInfinity;
+        missionHud.Reset(player.position);
+        if (truckAudio) truckAudio.ResetSounds();
         truck.SetPositionAndRotation(route[0].position,
             Quaternion.LookRotation((route[1].position - route[0].position).normalized, Vector3.up));
         SetInput(false);
@@ -129,13 +152,15 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void Update()
     {
+        missionHud.Tick(this);
         elapsed += Time.deltaTime;
-        if (elapsed >= gateOpenDelay && elapsed < windowEnd) gate.SetOpen(true);
         if (!handedOff)
         {
-            UpdateShot();
             if (elapsed >= cutsceneDuration)
             {
+                UpdateShot();
+                HandoffPositionError = Vector3.Distance(introCamera.transform.position, playerCamera.transform.position);
+                HandoffAngleError = Quaternion.Angle(introCamera.transform.rotation, playerCamera.transform.rotation);
                 handedOff = true;
                 windowEnd = elapsed + entryWindow;
                 SwitchCamera(playerCamera);
@@ -144,24 +169,44 @@ public sealed class IntroTruckSequence : MonoBehaviour
                 Cursor.visible = false;
             }
         }
-        entered |= Vector3.Dot(player.position - entryPlanePoint, insideDirection.normalized) > entryDepth;
-        if (handedOff && elapsed >= windowEnd)
+        if (!entered && handedOff && Vector3.Dot(player.position - entryPlanePoint, insideDirection.normalized) > entryDepth)
         {
-            bool truckClear = Vector3.Dot(truck.position - entryPlanePoint, insideDirection.normalized) >
-                collisionHalfExtents.z + entryDepth;
-            gate.SetOpen(!truckClear);
-            missedEntry = !entered;
+            entered = true;
         }
         if (!parked) MoveTruck();
+        // Latch the first right turn inside the entrance, independently of route point numbering.
+        // The gate's swept-volume interlock still holds the leaves open for anything in their path.
+        Vector3 inward = insideDirection.normalized;
+        bool truckInside = Vector3.Dot(truck.position - entryPlanePoint, inward) > collisionHalfExtents.z + .5f;
+        bool turningRight = Vector3.Dot(truck.forward, Vector3.Cross(Vector3.up, inward)) > .12f;
+        if (handedOff && !gateClosingRequested && ((truckInside && turningRight) || elapsed >= windowEnd))
+            gateClosingRequested = true;
+        if (elapsed >= gateOpenDelay) gate.SetOpen(!gateClosingRequested);
+        // Being in the opening during closing is still a successful attempt; fail only once shut.
+        if (gateClosingRequested && gate.IsClosed) missedEntry = !entered;
+        if (truckAudio) truckAudio.Tick(currentSpeed, speed, parked, Time.deltaTime);
         if (missedEntry && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
             Retry();
     }
 
+    void LateUpdate()
+    {
+        if (!handedOff) UpdateShot();
+    }
+
     void UpdateShot()
     {
-        introCamera.transform.position = cameraPosition + cameraDrift * Mathf.SmoothStep(0, 1,
-            Mathf.Clamp01(elapsed / Mathf.Max(0.1f, cutsceneDuration)));
-        introCamera.transform.LookAt(truck.position + cameraLookOffset);
+        float t = Mathf.Clamp01(elapsed / Mathf.Max(.1f, cutsceneDuration));
+        Vector3 follow = truck.TransformPoint(followOffset);
+        Quaternion followRotation = Quaternion.LookRotation(truck.position + cameraLookOffset - follow);
+        Vector3 behind = player.TransformPoint(shoulderOffset);
+        Quaternion behindRotation = Quaternion.LookRotation(playerCamera.transform.position + player.forward * 8 - behind);
+        float drift = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.3f, .78f, t));
+        float eyes = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.8f, 1, t));
+        introCamera.transform.SetPositionAndRotation(
+            Vector3.Lerp(Vector3.Lerp(follow, behind, drift), playerCamera.transform.position, eyes),
+            Quaternion.Slerp(Quaternion.Slerp(followRotation, behindRotation, drift), playerCamera.transform.rotation, eyes));
+        introCamera.fieldOfView = Mathf.Lerp(58, playerCamera.fieldOfView, eyes);
     }
 
     void MoveTruck()
@@ -183,6 +228,12 @@ public sealed class IntroTruckSequence : MonoBehaviour
         float stoppingSpeed = Mathf.Sqrt(2 * acceleration * distance);
         float desiredSpeed = targetPoint == route.Length - 1 || targetPoint == gateWaitPoint
             ? Mathf.Min(speed, stoppingSpeed) : speed;
+        if (targetPoint < route.Length - 1)
+        {
+            Vector3 outgoing = route[targetPoint + 1].position - destination;
+            outgoing.y = 0;
+            if (Vector3.Angle(delta, outgoing) > 6) desiredSpeed = Mathf.Min(desiredSpeed, speed * .6f);
+        }
         if (Quaternion.Angle(truck.rotation, desired) > 30) desiredSpeed = 0;
         float step = Mathf.Min(distance, Mathf.MoveTowards(currentSpeed, desiredSpeed,
             acceleration * Time.deltaTime) * Time.deltaTime);
@@ -250,24 +301,20 @@ public sealed class IntroTruckSequence : MonoBehaviour
         bool controllerEnabled = controller && controller.enabled;
         if (controller) controller.enabled = false;
         player.SetPositionAndRotation(playerStart, playerRotation);
+        playerCamera.transform.localRotation = cameraStartRotation;
         if (controller) controller.enabled = controllerEnabled;
     }
 
     void OnDisable()
     {
+        missionHud.ReleaseCursor();
         if (inputStates == null) return;
         SetInput(true);
         if (playerCamera && introCamera) SwitchCamera(playerCamera);
+        if (truckAudio) truckAudio.StopSounds();
     }
 
-    void OnGUI()
-    {
-        if (!handedOff) return;
-        string message = missedEntry ? "Entry window missed — press R to retry the truck intro" :
-            !entered ? $"Follow the truck through the gate   {Mathf.CeilToInt(Mathf.Max(0, windowEnd - elapsed))}s" : "";
-        if (message.Length == 0) return;
-        GUI.Box(new Rect(Screen.width / 2f - 245, Screen.height - 90, 490, 45), message);
-    }
+    void OnGUI() => missionHud.Draw(this);
 
     void OnDrawGizmosSelected()
     {

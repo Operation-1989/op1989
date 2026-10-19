@@ -60,7 +60,9 @@ public sealed class PlayerSoldierPresentation : MonoBehaviour
     void BeginCameraRendering(ScriptableRenderContext context, Camera camera)
     {
         if (body && fullBodyMesh && firstPersonMesh)
-            body.sharedMesh = camera == firstPersonCamera ? firstPersonMesh : fullBodyMesh;
+            body.sharedMesh = camera == firstPersonCamera ||
+                (firstPersonCamera && Vector3.Distance(camera.transform.position, firstPersonCamera.transform.position) < .65f)
+                ? firstPersonMesh : fullBodyMesh;
     }
 
     void EndCameraRendering(ScriptableRenderContext context, Camera camera)

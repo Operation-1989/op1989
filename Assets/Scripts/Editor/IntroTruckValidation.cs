@@ -13,7 +13,7 @@ public static class IntroTruckValidation
     const string Report = "Temp/IntroTruck/validation.txt";
     static Keyboard keyboard;
     static int waypoint;
-    static readonly Vector3[] Walk = { new Vector3(14,0,-103), new Vector3(9,0,-103), new Vector3(6,0,-101), new Vector3(3.78f,0,-97), new Vector3(3.78f,0,-86), new Vector3(3.78f,0,-82) };
+    static readonly Vector3[] Walk = { new Vector3(8,0,-97), new Vector3(6,0,-97), new Vector3(3.78f,0,-97), new Vector3(3.78f,0,-86), new Vector3(3.78f,0,-82) };
 
     [InitializeOnLoadMethod]
     static void Resume()
@@ -28,8 +28,12 @@ public static class IntroTruckValidation
             throw new System.InvalidOperationException("Save the intro scene and run from Edit Mode.");
         Directory.CreateDirectory("Temp/IntroTruck");
         File.WriteAllText(Report, "Intro truck Play Mode validation\n");
+        SessionState.SetFloat("IntroValidationTimeScale", Time.timeScale);
         File.WriteAllText(Marker, "0");
         SessionState.SetInt("IntroValidationStage", 0);
+        SessionState.SetBool("IntroMidShot", false);
+        SessionState.SetBool("IntroShoulderShot", false);
+        SessionState.SetBool("IntroClosingChecked", false);
         EditorApplication.update -= Tick;
         EditorApplication.update += Tick;
         EditorApplication.isPlaying = true;
@@ -75,18 +79,37 @@ public static class IntroTruckValidation
         switch (stage)
         {
             case 0:
+                Time.timeScale = 3;
                 Check("Initial input disabled", sequence.playerInput.All(b => !b.enabled));
                 Check("Initial aerial camera", sequence.introCamera.enabled && !sequence.playerCamera.enabled);
                 Check("Initial one AudioListener", listeners == 1, listeners.ToString());
+                Check("Truck approaches opposite player side", sequence.route[0].position.x < sequence.entryPlanePoint.x && sequence.player.position.x > sequence.entryPlanePoint.x);
+                Check("Truck spatial audio running", sequence.truck.GetComponents<AudioSource>().Count(a => a.isPlaying && a.spatialBlend == 1) >= 2);
                 Snapshot("initial"); Stage(1); break;
             case 1:
+                if (sequence.Elapsed >= sequence.cutsceneDuration * .4f && !SessionState.GetBool("IntroMidShot", false))
+                { Snapshot("drone-follow"); SessionState.SetBool("IntroMidShot", true); }
+                if (sequence.Elapsed >= sequence.cutsceneDuration * .79f && !SessionState.GetBool("IntroShoulderShot", false))
+                { Snapshot("behind-player"); SessionState.SetBool("IntroShoulderShot", true); }
                 if (sequence.Elapsed < sequence.cutsceneDuration + .5f) break;
                 Check("First-person handoff", sequence.HandedOff && sequence.playerCamera.enabled && !sequence.introCamera.enabled);
+                Check("Camera arrives exactly at player eyes", sequence.HandoffPositionError < .02f);
+                Check("Camera rotation matches at handoff", sequence.HandoffAngleError < .1f);
                 Check("Input restored", sequence.playerInput.All(b => b.enabled));
                 Check("Handoff one AudioListener", listeners == 1);
                 Snapshot("handoff"); Stage(2); break;
             case 2:
+                if (sequence.GateClosingRequested && !SessionState.GetBool("IntroClosingChecked", false))
+                {
+                    Check("Gate closes on truck's inside right turn", !sequence.Parked &&
+                        sequence.Elapsed < sequence.cutsceneDuration + sequence.entryWindow &&
+                        Vector3.Dot(sequence.truck.forward, Vector3.Cross(Vector3.up, sequence.insideDirection.normalized)) > .1f,
+                        $"elapsed={sequence.Elapsed:F2} truck={sequence.truck.position}");
+                    Snapshot("gate-closing-on-turn");
+                    SessionState.SetBool("IntroClosingChecked", true);
+                }
                 if (sequence.Elapsed < sequence.cutsceneDuration + sequence.entryWindow + sequence.gate.travelTime + 8) break;
+                Check("Truck brake sounds triggered", sequence.truckAudio && sequence.truckAudio.BrakeEvents > 0);
                 Check("Truck parked", sequence.Parked, $"position={sequence.truck.position} blocked={sequence.BlockedBy} target={sequence.TargetPoint}");
                 Check("Parking position", Vector3.Distance(sequence.truck.position, sequence.route.Last().position) < .35f);
                 Check("Missed entry prompt state", sequence.MissedEntry);
@@ -142,8 +165,10 @@ public static class IntroTruckValidation
             case 7:
                 if (Time.time < SessionState.GetFloat("IntroValidationWait", 0)) break;
                 Check("Gate closes once occupied area clears", sequence.gate.IsClosed);
+                Time.timeScale = SessionState.GetFloat("IntroValidationTimeScale", 1);
                 Stage(9); EditorApplication.isPlaying = false; break;
             case 10:
+                Time.timeScale = 3;
                 Check("Scene replay starts at aerial", !sequence.HandedOff && sequence.introCamera.enabled && !sequence.playerInput.Any(b => b.enabled));
                 Check("Scene replay resets parking and retry", !sequence.Parked && !sequence.MissedEntry);
                 Check("Scene replay one listener", listeners == 1);
@@ -151,6 +176,7 @@ public static class IntroTruckValidation
             case 11:
                 if (!sequence.HandedOff) break;
                 Check("Replay restores first-person and input", sequence.playerCamera.enabled && sequence.playerInput.All(b => b.enabled));
+                Time.timeScale = SessionState.GetFloat("IntroValidationTimeScale", 1);
                 Stage(12); EditorApplication.isPlaying = false; break;
         }
     }
