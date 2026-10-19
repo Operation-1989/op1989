@@ -13,6 +13,7 @@ public sealed class PlayerSoldierPresentation : MonoBehaviour
     public SkinnedMeshRenderer body;
     public Mesh fullBodyMesh;
     public Mesh firstPersonMesh;
+    public RifleWeapon rifle;
     [Min(0.1f)] public float walkSpeed = 4f;
     [Min(0.1f)] public float runSpeed = 7f;
     [Min(0.05f)] public float fireInterval = 0.18f;
@@ -38,10 +39,11 @@ public sealed class PlayerSoldierPresentation : MonoBehaviour
         sprinting = controlled && Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed;
         if (movement) movement.moveSpeed = sprinting ? runSpeed : walkSpeed;
         if (controlled && animator && Cursor.lockState == CursorLockMode.Locked &&
-            Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && Time.time >= nextFire)
+            Mouse.current != null && Mouse.current.leftButton.isPressed && Time.time >= nextFire &&
+            (!GetComponent<CombatHealth>() || !GetComponent<CombatHealth>().Dead))
         {
-            // Presentation only: this does not spawn projectiles or apply damage.
             animator.SetTrigger(Fire);
+            if (rifle && firstPersonCamera) rifle.Shoot(firstPersonCamera.transform.position, firstPersonCamera.transform.forward);
             nextFire = Time.time + fireInterval;
         }
     }

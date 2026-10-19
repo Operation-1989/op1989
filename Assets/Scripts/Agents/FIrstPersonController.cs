@@ -54,6 +54,13 @@ public class FirstPersonController : MonoBehaviour
         }
     }
 
+    public void ResetLook()
+    {
+        verticalRotation = 0;
+        verticalVelocity = 0;
+        if (playerCamera) playerCamera.localRotation = Quaternion.identity;
+    }
+
     void HandleMouseLook()
     {
         if (Mouse.current == null ||

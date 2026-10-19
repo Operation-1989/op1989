@@ -12,7 +12,7 @@ public sealed class IntroMissionHud
     GUIStyle eyebrow, heading, body, hint, button, close;
     public bool Expanded { get; private set; }
     public bool Visible => !dismissed || Expanded;
-    float Scale => Mathf.Max(.1f, Mathf.Min(Screen.width / 1280f, Screen.height / 720f));
+    float Scale => MissionHudStyle.Scale;
     Rect ButtonRect => new Rect(24, Screen.height / Scale - 56, 210, 34);
     Rect CardRect => new Rect(24, ButtonRect.y - (Expanded ? 276 : 206) - 10, 440, Expanded ? 276 : 206);
 
@@ -91,8 +91,8 @@ public sealed class IntroMissionHud
     void Styles()
     {
         if (body != null) return;
-        var regular = Resources.Load<Font>("MissionUI/Inter-Regular");
-        var semibold = Resources.Load<Font>("MissionUI/Inter-SemiBold");
+        var regular = MissionHudStyle.Regular;
+        var semibold = MissionHudStyle.Semibold;
         eyebrow = Label(regular, 11, new Color(.68f, .75f, .71f));
         heading = Label(semibold, 21, new Color(.96f, .96f, .9f));
         body = Label(regular, 16, new Color(.85f, .89f, .86f));
@@ -106,10 +106,7 @@ public sealed class IntroMissionHud
 
     static GUIStyle Label(Font font, int size, Color color)
     {
-        var style = new GUIStyle(GUI.skin.label) { font = font, fontSize = size, wordWrap = true,
-            padding = new RectOffset(), margin = new RectOffset() };
-        style.normal.textColor = color;
-        return style;
+        return MissionHudStyle.Label(font, size, color);
     }
 
     static void Fill(Rect rect, Color color)
@@ -129,9 +126,7 @@ public sealed class IntroMissionHud
         if (Visible)
         {
             Rect card = CardRect;
-            Fill(new Rect(card.x + 3, card.y + 4, card.width, card.height), new Color(0, 0, 0, .22f));
-            Fill(card, new Color(.035f, .055f, .048f, .95f));
-            Fill(new Rect(card.x, card.y, 3, card.height), new Color(.76f, .69f, .42f));
+            MissionHudStyle.Card(card);
             string status = sequence.MissedEntry ? "ENTRY WINDOW MISSED" : sequence.Entered ? "NEXT OBJECTIVE" : "INFILTRATION  /  01";
             bool overview = !sequence.HandedOff && sequence.Elapsed < sequence.cutsceneDuration * .48f;
             string title = overview || Expanded ? "Recover the secret" : sequence.MissedEntry ? "Regroup and try again" :
@@ -142,7 +137,7 @@ public sealed class IntroMissionHud
             GUI.Label(new Rect(card.x + 20, card.y + 18, 355, 18), overview ? sequence.missionTitle : status, eyebrow);
             GUI.Label(new Rect(card.x + 20, card.y + 43, 393, 31), title, heading);
             GUI.Label(new Rect(card.x + 20, card.y + 87, 393, card.height - 125), description, body);
-            string footer = !sequence.HandedOff ? "Observe the approach. Controls unlock shortly." :
+            string footer = !sequence.HandedOff ? "Space  Skip intro and take control" :
                 sequence.MissedEntry ? "R  Retry intro   /   M  Dismiss" : Expanded ? "M / Esc  Close   /   Move to dismiss" :
                 sequence.Entered ? "Move to dismiss   /   M  Mission" :
                 sequence.GateClosingRequested ? "Gate closing. Move through now.   /   M  Mission" :

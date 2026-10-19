@@ -38,6 +38,8 @@ public sealed class IntroTruckSequence : MonoBehaviour
     public Vector3 entryPlanePoint = new Vector3(4, 0, -90);
     public Vector3 insideDirection = Vector3.forward;
     [Min(0)] public float entryDepth = 4;
+    [Tooltip("Respawn offset from the gate: X across the entrance, Z into the base. Kept left of the truck route.")]
+    public Vector3 respawnOffset = new Vector3(-3, 0, 12);
     [Header("Grounding and collision")]
     public LayerMask groundLayers = ~0;
     [Tooltip("Height from route root to tire contact, measured during setup.")]
@@ -71,6 +73,16 @@ public sealed class IntroTruckSequence : MonoBehaviour
     public bool MissionExpanded => missionHud.Expanded;
     public bool Entered => entered;
     public float CurrentSpeed => currentSpeed;
+    public Vector3 RespawnPosition
+    {
+        get
+        {
+            Vector3 inward = insideDirection.normalized;
+            Vector3 point = entryPlanePoint + Vector3.Cross(Vector3.up, inward) * respawnOffset.x + inward * respawnOffset.z;
+            point.y = playerStart.y + respawnOffset.y;
+            return point;
+        }
+    }
     public float HandoffPositionError { get; private set; }
     public float HandoffAngleError { get; private set; }
     static readonly Vector3[] GroundProbes =
@@ -154,6 +166,8 @@ public sealed class IntroTruckSequence : MonoBehaviour
     {
         missionHud.Tick(this);
         elapsed += Time.deltaTime;
+        if (!handedOff && Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+            SkipIntro();
         if (!handedOff)
         {
             if (elapsed >= cutsceneDuration)
@@ -161,12 +175,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
                 UpdateShot();
                 HandoffPositionError = Vector3.Distance(introCamera.transform.position, playerCamera.transform.position);
                 HandoffAngleError = Quaternion.Angle(introCamera.transform.rotation, playerCamera.transform.rotation);
-                handedOff = true;
-                windowEnd = elapsed + entryWindow;
-                SwitchCamera(playerCamera);
-                SetInput(true);
-                Cursor.lockState = CursorLockMode.Locked;
-                Cursor.visible = false;
+                Handoff();
             }
         }
         if (!entered && handedOff && Vector3.Dot(player.position - entryPlanePoint, insideDirection.normalized) > entryDepth)
@@ -185,8 +194,46 @@ public sealed class IntroTruckSequence : MonoBehaviour
         // Being in the opening during closing is still a successful attempt; fail only once shut.
         if (gateClosingRequested && gate.IsClosed) missedEntry = !entered;
         if (truckAudio) truckAudio.Tick(currentSpeed, speed, parked, Time.deltaTime);
-        if (missedEntry && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
+        if (missedEntry && player.GetComponent<FirstPersonController>().enabled &&
+            Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
             Retry();
+    }
+
+    void Handoff()
+    {
+        handedOff = true;
+        windowEnd = elapsed + entryWindow;
+        SwitchCamera(playerCamera);
+        SetInput(true);
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+    }
+
+    public void SkipIntro()
+    {
+        if (handedOff || !Initialize()) return;
+        elapsed = Mathf.Max(elapsed, cutsceneDuration);
+        Handoff();
+    }
+
+    public void RespawnInsideGate()
+    {
+        if (!Initialize()) return;
+        SetInput(false);
+        var controller = player.GetComponent<CharacterController>();
+        bool wasEnabled = controller && controller.enabled;
+        if (controller) controller.enabled = false;
+        player.SetPositionAndRotation(RespawnPosition, Quaternion.LookRotation(insideDirection.normalized));
+        playerCamera.transform.localRotation = cameraStartRotation;
+        var movement = player.GetComponent<FirstPersonController>();
+        if (movement) movement.ResetLook();
+        if (controller) controller.enabled = wasEnabled;
+        Physics.SyncTransforms();
+        elapsed = Mathf.Max(elapsed, cutsceneDuration);
+        entered = true;
+        missedEntry = false;
+        missionHud.Reset(player.position);
+        Handoff();
     }
 
     void LateUpdate()
@@ -314,7 +361,11 @@ public sealed class IntroTruckSequence : MonoBehaviour
         if (truckAudio) truckAudio.StopSounds();
     }
 
-    void OnGUI() => missionHud.Draw(this);
+    void OnGUI()
+    {
+        var health = player ? player.GetComponent<CombatHealth>() : null;
+        if (!health || !health.Dead) missionHud.Draw(this);
+    }
 
     void OnDrawGizmosSelected()
     {
