@@ -2958,6 +2958,7 @@ GameObject:
   - component: {fileID: 173888798}
   - component: {fileID: 173888797}
   - component: {fileID: 173888796}
+  - component: {fileID: 173888799}
   m_Layer: 0
   m_Name: Patrol Jeep (UAZ)
   m_TagString: Untagged
@@ -3149,6 +3150,20 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1.9541674, y: 1.9423261, z: 4.0499997}
   m_Center: {x: 0, y: 1.0790701, z: -0.00000023841858}
+--- !u!114 &173888799
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 173888794}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 59dc9f5d7118fea4790f82dbd7083b4f, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::JeepDrivingAudio
+  drivingClip: {fileID: 8300000, guid: 18cbc94707f33d945ba2277bb032449f, type: 3}
+  volume: 0.3
 --- !u!1001 &186139392
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -9485,6 +9500,59 @@ Transform:
   m_Children: []
   m_Father: {fileID: 392454540}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &634993641
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 634993643}
+  - component: {fileID: 634993642}
+  m_Layer: 0
+  m_Name: Main Building Chatter Zone
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!65 &634993642
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 634993641}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 29.33687, y: 14.56, z: 16.497227}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!4 &634993643
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 634993641}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.42, y: 7.31, z: 23.66}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1774285567}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &642372762
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -13329,7 +13397,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RifleWeapon
   muzzle: {fileID: 992793955}
-  shotSound: {fileID: 8300000, guid: 1f9adc5fba7d8dd45955f19b5f4bf078, type: 3}
+  shotSound: {fileID: 8300000, guid: 8dba9efe8abaa114f86bc51d8a3447b9, type: 3}
   damage: 25
   range: 100
   playerWeapon: 1
@@ -17627,7 +17695,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RifleWeapon
   muzzle: {fileID: 2011163228}
-  shotSound: {fileID: 8300000, guid: 1f9adc5fba7d8dd45955f19b5f4bf078, type: 3}
+  shotSound: {fileID: 8300000, guid: 8dba9efe8abaa114f86bc51d8a3447b9, type: 3}
   damage: 8
   range: 45
   playerWeapon: 0
@@ -27578,6 +27646,63 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 2802adbd6a7c1a7489f3b9ccfb135f86, type: 3}
+--- !u!1 &1774285565
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1774285567}
+  - component: {fileID: 1774285566}
+  m_Layer: 0
+  m_Name: Mission Ambience
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1774285566
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1774285565}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 341c891a8e3469d43905f494bd9d4ac2, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::MissionAmbientAudio
+  player: {fileID: 814375252}
+  intro: {fileID: 85344378}
+  controlRoom: {fileID: 634993642}
+  controlRoomChatter: {fileID: 8300000, guid: 82b1d5d1907990f48ac4f3af47917f30, type: 3}
+  flybyClips:
+  - {fileID: 8300000, guid: 52c36f705e31a7c4fbb23fee9af9fd2d, type: 3}
+  - {fileID: 8300000, guid: aaa3a0d7e3a47764ba5f6032e63bd0b0, type: 3}
+  helicopterFlyby: {fileID: 8300000, guid: aaa3a0d7e3a47764ba5f6032e63bd0b0, type: 3}
+  chatterVolume: 0.22
+  flybyVolume: 0.55
+  flybyInterval: {x: 30, y: 30}
+  helicopterFadeInSeconds: 2
+--- !u!4 &1774285567
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1774285565}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 634993643}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1776146804
 GameObject:
   m_ObjectHideFlags: 0
@@ -31159,8 +31284,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IntroTruckAudio
   engineClip: {fileID: 0}
-  rollingClip: {fileID: 0}
-  brakeClip: {fileID: 0}
+  rollingClip: {fileID: 8300000, guid: 6b2deb6692bff304c8d5d777be6a50fa, type: 3}
+  brakeClip: {fileID: 8300000, guid: dd225e1c02481014fa64e040242a655b, type: 3}
   volume: 0.65
 --- !u!1 &2004000940
 GameObject:
@@ -33504,3 +33629,4 @@ SceneRoots:
   - {fileID: 1099242215}
   - {fileID: 808693217}
   - {fileID: 1776970165}
+  - {fileID: 1774285567}
