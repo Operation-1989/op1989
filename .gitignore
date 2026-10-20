@@ -60,3 +60,7 @@ crashlytics-build.properties
 *.aab
 *.unitypackage
 *.app
+
+# Ignore Viking Village asset
+/Assets/Viking Village/
+/Assets/Viking Village.meta
