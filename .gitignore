@@ -64,3 +64,6 @@ crashlytics-build.properties
 # Ignore Viking Village asset
 /Assets/Viking Village/
 /Assets/Viking Village.meta
+
+# Local Junction
+/op1989/

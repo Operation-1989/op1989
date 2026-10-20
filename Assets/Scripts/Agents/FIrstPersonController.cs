@@ -17,10 +17,12 @@ public class FirstPersonController : MonoBehaviour
     private CharacterController controller;
     private float verticalRotation;
     private float verticalVelocity;
+    private IntroTruckSequence introSequence;
 
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        introSequence = FindAnyObjectByType<IntroTruckSequence>();
 
         if (playerCamera == null && Camera.main != null)
             playerCamera = Camera.main.transform;
@@ -33,6 +35,9 @@ public class FirstPersonController : MonoBehaviour
     {
         HandleMouseLook();
         HandleMovement();
+
+        // Mission buttons and their close shortcut own this click; do not recapture the cursor.
+        if (introSequence && introSequence.MissionCapturesPointer) return;
 
         if (Keyboard.current != null &&
             Keyboard.current.escapeKey.wasPressedThisFrame)
@@ -47,6 +52,13 @@ public class FirstPersonController : MonoBehaviour
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
+    }
+
+    public void ResetLook()
+    {
+        verticalRotation = 0;
+        verticalVelocity = 0;
+        if (playerCamera) playerCamera.localRotation = Quaternion.identity;
     }
 
     void HandleMouseLook()
