@@ -1,2 +1,14 @@
 fileFormatVersion: 2
 guid: 229350b3e89bd6c46863d02c884e3d04
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - engineClip: {instanceID: 0}
+  - rollingClip: {fileID: 8300000, guid: 6b2deb6692bff304c8d5d777be6a50fa, type: 3}
+  - brakeClip: {fileID: 8300000, guid: dd225e1c02481014fa64e040242a655b, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

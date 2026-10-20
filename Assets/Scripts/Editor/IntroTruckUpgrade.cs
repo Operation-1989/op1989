@@ -39,6 +39,9 @@ public static class IntroTruckUpgrade
         s.truck.SetPositionAndRotation(points[0], Quaternion.Euler(0,90,0));
         var audio = s.truck.GetComponent<IntroTruckAudio>();
         if (!audio) audio = Undo.AddComponent<IntroTruckAudio>(s.truck.gameObject);
+        Undo.RecordObject(audio, "Assign truck recordings");
+        audio.rollingClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Vehicles/TruckMoving.mp3");
+        audio.brakeClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Vehicles/TruckBrakes.mp3");
         s.truckAudio = audio;
         // Swing the existing outer road leaf around its hinge; retain the original model and scenery.
         const string hingeName = "Outer Approach Gate Open Hinge";

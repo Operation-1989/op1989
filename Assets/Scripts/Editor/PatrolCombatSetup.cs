@@ -88,6 +88,8 @@ public static class PatrolCombatSetup
     }
     static AudioClip MakeSound()
     {
+        var recording = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Weapons/MachineGun.mp3");
+        if (recording) return recording;
         const string path="Assets/Combat/RifleShot.wav";
         if(!File.Exists(path))
         {
