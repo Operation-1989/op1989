@@ -156,6 +156,14 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void SwitchCamera(Camera active)
     {
+        // Environment scenes can bring their own cameras (for example MasterCamera).
+        // Only the intro or the player's eyes may render to the primary display.
+        playerCamera.targetDisplay = 0;
+        introCamera.targetDisplay = 0;
+        foreach (var camera in FindObjectsByType<Camera>(FindObjectsInactive.Include))
+            if (camera.gameObject.scene == gameObject.scene && camera.targetDisplay == 0 &&
+                camera.cameraType == CameraType.Game && camera != playerCamera && camera != introCamera)
+                camera.enabled = false;
         playerCamera.enabled = active == playerCamera;
         introCamera.enabled = active == introCamera;
         foreach (var listener in FindObjectsByType<AudioListener>(FindObjectsInactive.Include))

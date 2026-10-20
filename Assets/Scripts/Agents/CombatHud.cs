@@ -13,7 +13,7 @@ public sealed class CombatHud
         hint = MissionHudStyle.Label(MissionHudStyle.Regular, 12, new Color(.65f, .73f, .69f));
         healthText = MissionHudStyle.Label(MissionHudStyle.Semibold, 18, new Color(.96f, .96f, .9f));
         healthText.alignment = TextAnchor.MiddleRight;
-        crosshair = MissionHudStyle.Label(MissionHudStyle.Regular, 20, new Color(.96f, .96f, .9f, .85f));
+        crosshair = MissionHudStyle.Label(MissionHudStyle.Regular, 28, new Color(.96f, .96f, .9f, 1f));
         crosshair.alignment = TextAnchor.MiddleCenter;
     }
 
@@ -41,7 +41,7 @@ public sealed class CombatHud
             GUI.Label(new Rect(death.x + 20, death.yMax - 35, 395, 22), $"Respawning in {Mathf.CeilToInt(secondsLeft)}s   /   R  Respawn now", hint);
         }
         else if (Cursor.lockState == CursorLockMode.Locked)
-            GUI.Label(new Rect(width / 2 - 12, height / 2 - 12, 24, 24), "+", crosshair);
+            GUI.Label(new Rect(width / 2 - 18, height / 2 - 18, 36, 36), "+", crosshair);
         GUI.matrix = matrix;
     }
 }

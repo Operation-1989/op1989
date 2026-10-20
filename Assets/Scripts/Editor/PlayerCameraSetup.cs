@@ -16,6 +16,26 @@ public static class PlayerCameraSetup
 
         Undo.RecordObject(player.firstPersonCamera, "Configure first person display");
         player.firstPersonCamera.targetDisplay = 0;
+        player.firstPersonCamera.enabled = true;
+        var sequence = Object.FindAnyObjectByType<IntroTruckSequence>();
+        foreach (var other in Object.FindObjectsByType<Camera>(FindObjectsInactive.Include))
+        {
+            if (other.gameObject.scene != player.gameObject.scene || other == player.firstPersonCamera ||
+                other.targetDisplay != 0 || other.cameraType != CameraType.Game) continue;
+            Undo.RecordObject(other, "Disable competing display camera");
+            other.enabled = false;
+        }
+        if (sequence && sequence.gameObject.scene == player.gameObject.scene)
+        {
+            Undo.RecordObject(sequence, "Bind player first person camera");
+            sequence.playerCamera = player.firstPersonCamera;
+            if (sequence.introCamera)
+            {
+                Undo.RecordObject(sequence.introCamera, "Configure intro display");
+                sequence.introCamera.targetDisplay = 0;
+                sequence.introCamera.enabled = false;
+            }
+        }
         var existing = player.transform.Find("Third Person Camera");
         var go = existing ? existing.gameObject : new GameObject("Third Person Camera");
         if (!existing) Undo.RegisterCreatedObjectUndo(go, "Add third person camera");

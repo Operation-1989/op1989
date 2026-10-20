@@ -80,6 +80,12 @@ public static class IntroTruckValidation
         {
             case 0:
                 Time.timeScale = 3;
+                var competingCamera = new GameObject("Camera conflict regression").AddComponent<Camera>();
+                competingCamera.targetDisplay = 0;
+                competingCamera.depth = 100;
+                sequence.Retry();
+                Check("Environment camera cannot override Display 1", !competingCamera.enabled);
+                Object.Destroy(competingCamera.gameObject);
                 Check("Initial input disabled", sequence.playerInput.All(b => !b.enabled));
                 Check("Initial aerial camera", sequence.introCamera.enabled && !sequence.playerCamera.enabled);
                 Check("Initial one AudioListener", listeners == 1, listeners.ToString());
@@ -93,6 +99,13 @@ public static class IntroTruckValidation
                 { Snapshot("behind-player"); SessionState.SetBool("IntroShoulderShot", true); }
                 if (sequence.Elapsed < sequence.cutsceneDuration + .5f) break;
                 Check("First-person handoff", sequence.HandedOff && sequence.playerCamera.enabled && !sequence.introCamera.enabled);
+                Check("Display 1 renders only player FPV", sequence.playerCamera.targetDisplay == 0 &&
+                    Object.FindObjectsByType<Camera>().Where(c => c.isActiveAndEnabled &&
+                        c.gameObject.scene == sequence.gameObject.scene && c.targetDisplay == 0 &&
+                        c.cameraType == CameraType.Game).SequenceEqual(new[] { sequence.playerCamera }));
+                var thirdPerson = sequence.player.Find("Third Person Camera");
+                Check("Display 2 retains third person", thirdPerson && thirdPerson.GetComponent<Camera>().isActiveAndEnabled &&
+                    thirdPerson.GetComponent<Camera>().targetDisplay == 1);
                 Check("Camera arrives exactly at player eyes", sequence.HandoffPositionError < .02f);
                 Check("Camera rotation matches at handoff", sequence.HandoffAngleError < .1f);
                 Check("Input restored", sequence.playerInput.All(b => b.enabled));

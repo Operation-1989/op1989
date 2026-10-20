@@ -4,6 +4,8 @@ Open `Assets/army base.unity` and enter Play Mode. The player starts behind the 
 
 ## Scene setup
 
+- The environment, intro, and both player camera views are saved together in `Assets/army base.unity`. This is the enabled startup scene in Build Settings; no separate camera scene is required.
+- In the Game window, choose **Display 1** for the intro followed by first-person play, or **Display 2** for `Intro Player/Third Person Camera`. The Game window layout is local editor state and is not shared by Git. After cloning or merging, open the saved scene from the Project window rather than a temporary recovery scene.
 - `Intro Truck Cutscene` owns `IntroTruckSequence`, the dedicated M923 instance, route markers, gate hinges, and local entrance footing/threshold.
 - `Intro Player` is copied from the existing `AgentTesting` player, including its first-person camera and controller. The source scene and player code are unchanged.
 - The copied player's capsule renderer is disabled. Its textured soldier visual and player-specific animation setup are documented in `Assets/PlayerSoldier/README.md`; its original controller and collision setup remain in place.
