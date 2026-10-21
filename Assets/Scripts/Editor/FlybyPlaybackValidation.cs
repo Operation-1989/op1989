@@ -10,7 +10,7 @@ public static class FlybyPlaybackValidation
     const string Active = "FlybyPlaybackValidation";
     const string Report = "Temp/MissionAudio/flyby-playmode.txt";
     static bool initialized;
-    static double deadline, started;
+    static double deadline, started, sessionStarted;
     static AudioClip previous;
     static int passes;
     static AudioSource source;
@@ -113,12 +113,13 @@ public static class FlybyPlaybackValidation
                 audio.enabled = true;
                 previous = null;
                 passes = 0;
-                deadline = AudioSettings.dspTime + 150;
+                sessionStarted = AudioSettings.dspTime;
+                deadline = sessionStarted + 240;
                 initialized = true;
             }
             if (AudioSettings.dspTime > deadline)
             {
-                Check("Plane and helicopter both complete within 150 audio seconds", false);
+                Check("Plane and helicopter both complete within 240 audio seconds", false);
                 Finish();
                 return;
             }
@@ -133,7 +134,7 @@ public static class FlybyPlaybackValidation
             File.AppendAllText(Report, "Playing " + source.clip.name + " peak=" + peak.ToString("F3") + " volume=" + source.volume + "\n");
             if (passes == 0)
             {
-                Check("First pass starts during intro", audio.intro && !audio.intro.HandedOff);
+                Check("First pass leaves the drone launch audible", now - sessionStarted >= audio.flybyInterval.x - .5);
                 Check("First pass is plane", source.clip == audio.flybyClips[0]);
                 Check("Plane has no fade or distance attenuation", source.spatialBlend == 0 && Mathf.Approximately(source.volume, audio.flybyVolume) && !source.mute);
                 Check("No randomized pitch or looping", Mathf.Approximately(source.pitch, 1) && !source.loop);
@@ -142,7 +143,7 @@ public static class FlybyPlaybackValidation
             {
                 double elapsed = now - started;
                 Check(previous.name + " plays its full duration", elapsed >= previous.length);
-                Check("Next pass respects the configured gap", elapsed >= previous.length + audio.flybyInterval.x - .5f && elapsed <= previous.length + audio.flybyInterval.y + 2);
+                Check("Next pass respects the configured start interval", elapsed >= Math.Max(previous.length, audio.flybyInterval.x) - .5f && elapsed <= Math.Max(previous.length, audio.flybyInterval.y) + 2);
                 Check("Plane and helicopter alternate", source.clip == audio.flybyClips[passes % audio.flybyClips.Length]);
                 Check("Playback continues with slow game time", Mathf.Approximately(Time.timeScale, .1f) && source.timeSamples >= 0);
                 File.AppendAllText(Report, "Previous clip=" + previous.name + " duration=" + previous.length + " next start after=" + elapsed.ToString("F2") + " audio seconds\n");
