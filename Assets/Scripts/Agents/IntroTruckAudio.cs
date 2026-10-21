@@ -16,10 +16,7 @@ public sealed class IntroTruckAudio : MonoBehaviour
         var source = gameObject.AddComponent<AudioSource>();
         source.playOnAwake = false;
         source.loop = loop;
-        source.spatialBlend = 1;
-        source.minDistance = 7;
-        source.maxDistance = 90;
-        source.rolloffMode = AudioRolloffMode.Linear;
+        VehicleAudioFalloff.Configure(source, 4, 28, 55);
         source.dopplerLevel = .25f;
         return source;
     }

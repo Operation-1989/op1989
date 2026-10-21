@@ -53,9 +53,10 @@ public static class MissionAudioSetup
         Undo.RecordObject(ambience, "Configure full flyby recordings");
         ambience.flybyClips = new[] { Clip("Ambiance/PlaneFlyBy"), Clip("Ambiance/HelicopterFlyBy") };
         ambience.helicopterFlyby = ambience.flybyClips[1];
-        ambience.helicopterFadeInSeconds = 2;
-        ambience.flybyVolume = .55f;
-        ambience.flybyInterval = new Vector2(30, 30);
+        ambience.helicopterFadeInSeconds = 4;
+        ambience.helicopterVolumeMultiplier = .3f;
+        ambience.flybyVolume = .3f;
+        ambience.flybyInterval = new Vector2(60, 60);
         EditorUtility.SetDirty(ambience);
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);

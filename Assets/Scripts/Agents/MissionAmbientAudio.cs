@@ -11,8 +11,9 @@ public sealed class MissionAmbientAudio : MonoBehaviour
     public AudioClip[] flybyClips;
     public AudioClip helicopterFlyby;
     [Range(0, 1)] public float chatterVolume = .22f;
-    [Range(0, 1)] public float flybyVolume = .55f;
-    public Vector2 flybyInterval = new Vector2(30, 30);
+    [Range(0, 1)] public float flybyVolume = .3f;
+    [Range(0, 1)] public float helicopterVolumeMultiplier = .3f;
+    public Vector2 flybyInterval = new Vector2(60, 60);
     [Min(0)] public float helicopterFadeInSeconds = 2;
     AudioSource chatter, chatterTail, aircraft;
     double nextFlyby;
@@ -79,7 +80,7 @@ public sealed class MissionAmbientAudio : MonoBehaviour
         flybyActive = false;
         indoorBlend = 0;
         nextClip = 0;
-        nextFlyby = AudioSettings.dspTime;
+        ScheduleFlyby();
     }
 
     // Use the audio clock: a slow frame rate or changed time scale must not stretch the gaps.
@@ -99,13 +100,12 @@ public sealed class MissionAmbientAudio : MonoBehaviour
         float fadeIn = flybyActive && aircraft.clip == helicopterFlyby && helicopterFadeInSeconds > 0
             ? Mathf.SmoothStep(0, 1, (float)(AudioSettings.dspTime - flybyStarted) / helicopterFadeInSeconds)
             : 1;
-        aircraft.volume = flybyVolume * fadeIn;
+        aircraft.volume = VolumeFor(aircraft.clip) * fadeIn;
         aircraft.mute = !flybysAllowed || !outside;
         // Let the AudioSource finish naturally; never truncate a recording using a frame timer.
         if (flybyActive && !aircraft.isPlaying)
         {
             flybyActive = false;
-            ScheduleFlyby();
         }
         if (!flybyActive && AudioSettings.dspTime >= nextFlyby && flybysAllowed && outside)
         {
@@ -121,11 +121,14 @@ public sealed class MissionAmbientAudio : MonoBehaviour
             if (!clip || clip.length <= 0) { ScheduleFlyby(); return; }
             aircraft.clip = clip;
             flybyStarted = AudioSettings.dspTime;
-            aircraft.volume = clip == helicopterFlyby && helicopterFadeInSeconds > 0 ? 0 : flybyVolume;
+            aircraft.volume = clip == helicopterFlyby && helicopterFadeInSeconds > 0 ? 0 : VolumeFor(clip);
             aircraft.Play();
             flybyActive = true;
+            ScheduleFlyby();
         }
     }
+
+    public float VolumeFor(AudioClip clip) => flybyVolume * (clip && clip == helicopterFlyby ? helicopterVolumeMultiplier : 1);
 
     void UpdateChatter()
     {
@@ -158,6 +161,6 @@ public sealed class MissionAmbientAudio : MonoBehaviour
         indoorBlend = 0;
     }
 
-    // The first pass begins on the first outdoor frame; later passes use the random interval.
+    // Leave the launch audible; the first pass and subsequent starts use the configured interval.
     void OnEnable() => ResetSession();
 }
