@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace Operation1989.Interaction
 {
@@ -69,10 +70,25 @@ namespace Operation1989.Interaction
 
         private void HandleInput()
         {
-            if (Input.GetKeyDown(interactKey) && currentInteractable != null)
+            if (WasInteractPressed() && currentInteractable != null)
             {
                 currentInteractable.Interact(transform);
             }
+        }
+
+        // This project uses the new Input System only. Keep the existing KeyCode
+        // field so current prefabs stay compatible, but read it through Keyboard.
+        private bool WasInteractPressed()
+        {
+            if (Keyboard.current == null) return false;
+
+            return interactKey switch
+            {
+                KeyCode.E => Keyboard.current.eKey.wasPressedThisFrame,
+                KeyCode.F => Keyboard.current.fKey.wasPressedThisFrame,
+                KeyCode.Q => Keyboard.current.qKey.wasPressedThisFrame,
+                _ => Keyboard.current.eKey.wasPressedThisFrame
+            };
         }
 
         private void OnDrawGizmosSelected()
