@@ -5,9 +5,7 @@ using Operation1989.Interaction.Core;
 namespace Operation1989.Interaction.Environment
 {
     /// <summary>
-    /// Connects the authored army-base geometry to the reusable interaction systems
-    /// at runtime. This avoids relying on hand-edited scene YAML and applies to any
-    /// scene containing the standard player and named environment props.
+    /// Connects authored army-base geometry to the reusable interaction systems.
     /// </summary>
     public static class WorldInteractionBootstrap
     {
@@ -15,6 +13,11 @@ namespace Operation1989.Interaction.Environment
         {
             "camera", "weapon", "rifle", "bullet", "projectile", "particle", "vfx",
             "effect", "sky", "cloud", "water", "ui", "canvas", "light", "audio"
+        };
+
+        private static readonly string[] NoGeneratedColliderNames =
+        {
+            "entrance", "entry", "door", "gate", "road", "floor", "window", "opening"
         };
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -45,6 +48,8 @@ namespace Operation1989.Interaction.Environment
             int interactableLayer = LayerMask.NameToLayer("Interactable");
             foreach (var transform in Object.FindObjectsByType<Transform>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
             {
+                DisablePassageCollider(transform);
+
                 if (transform.name.Contains("Door") && transform.GetComponent<Collider>() != null)
                 {
                     if (transform.GetComponent<DoorController>() == null)
@@ -58,36 +63,94 @@ namespace Operation1989.Interaction.Environment
 
                 AddEnvironmentCollider(transform, player);
             }
+
+            ConfigureMainBuildingEntrance(player);
+        }
+
+        private static void ConfigureMainBuildingEntrance(FirstPersonController player)
+        {
+            if (player == null)
+                return;
+
+            var controller = player.GetComponent<CharacterController>();
+            var interiorFloor = GameObject.Find("w");
+            var floorRenderer = interiorFloor != null ? interiorFloor.GetComponent<Renderer>() : null;
+            if (controller == null || floorRenderer == null)
+                return;
+
+            var passage = player.GetComponent<MainBuildingEntrancePassage>();
+            if (passage == null)
+                passage = player.gameObject.AddComponent<MainBuildingEntrancePassage>();
+
+            passage.Initialize(controller, floorRenderer);
+        }
+
+        private static void DisablePassageCollider(Transform transform)
+        {
+            var name = transform.name;
+            if (name.IndexOf("door", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                name.IndexOf("entrance", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                name.IndexOf("entry", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                name.IndexOf("opening", System.StringComparison.OrdinalIgnoreCase) < 0)
+                return;
+
+            foreach (var collider in transform.GetComponents<Collider>())
+                collider.enabled = false;
         }
 
         private static void AddEnvironmentCollider(Transform transform, FirstPersonController player)
         {
             if (transform.GetComponent<Collider>() != null ||
                 transform.GetComponent<DoorController>() != null ||
+                IsMainBuildingDoorMesh(transform) ||
+                HasExcludedNameInHierarchy(transform) ||
                 IsNonPhysical(transform, player))
                 return;
 
+            var rigidbody = transform.GetComponentInParent<Rigidbody>();
             var meshFilter = transform.GetComponent<MeshFilter>();
             if (meshFilter == null || meshFilter.sharedMesh == null)
                 return;
 
-            var rigidbody = transform.GetComponent<Rigidbody>();
             if (rigidbody != null && !rigidbody.isKinematic)
             {
-                // Unity does not allow non-convex MeshColliders on moving bodies.
-                // A bounds collider still makes vehicles and movable props solid.
                 var box = transform.gameObject.AddComponent<BoxCollider>();
                 box.center = meshFilter.sharedMesh.bounds.center;
                 box.size = meshFilter.sharedMesh.bounds.size;
+                transform.gameObject.AddComponent<GeneratedEnvironmentCollider>();
                 return;
             }
 
-            // Every visible static mesh in the outdoor base is physical. This covers
-            // imported buildings, walls, tanks, jeeps, trees, barricades and props
-            // even when the source asset arrived without a collider.
             var meshCollider = transform.gameObject.AddComponent<MeshCollider>();
             meshCollider.sharedMesh = meshFilter.sharedMesh;
             meshCollider.convex = false;
+            transform.gameObject.AddComponent<GeneratedEnvironmentCollider>();
+        }
+
+        private static bool IsMainBuildingDoorMesh(Transform transform)
+        {
+            if (!transform.name.Equals("mcube", System.StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            for (Transform current = transform.parent; current != null; current = current.parent)
+            {
+                if (current.name.Equals("IBuilding49", System.StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool HasExcludedNameInHierarchy(Transform transform)
+        {
+            for (Transform current = transform; current != null; current = current.parent)
+            {
+                foreach (var term in NoGeneratedColliderNames)
+                {
+                    if (current.name.IndexOf(term, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        return true;
+                }
+            }
+            return false;
         }
 
         private static bool IsNonPhysical(Transform transform, FirstPersonController player)
