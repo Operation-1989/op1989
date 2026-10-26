@@ -10,6 +10,43 @@ namespace Operation1989.Interaction.Environment
     public class LadderClimbZone : MonoBehaviour
     {
         [SerializeField] private Vector3 triggerSize = new Vector3(7f, 1.2f, 7f);
+        [SerializeField] private float topExitHeight;
+        [SerializeField] private Vector3 topExitDirection;
+        [SerializeField] private Vector3 topExitTarget;
+        [SerializeField] private bool useTopExitTarget;
+
+        public void Configure(Vector3 worldSize, float exitHeight, Vector3 exitDirection)
+        {
+            triggerSize = worldSize;
+            topExitHeight = exitHeight;
+            topExitDirection = exitDirection.normalized;
+            EnsureTrigger();
+        }
+
+        public void ConfigureTowardTarget(Vector3 worldSize, float exitHeight, Vector3 exitTarget)
+        {
+            triggerSize = worldSize;
+            topExitHeight = exitHeight;
+            topExitTarget = exitTarget;
+            useTopExitTarget = true;
+            EnsureTrigger();
+        }
+
+        public bool ShouldExitAtTop(Vector3 playerPosition)
+        {
+            return (useTopExitTarget || topExitDirection.sqrMagnitude > 0.01f) &&
+                   playerPosition.y >= topExitHeight;
+        }
+
+        public Vector3 GetTopExitDirection(Vector3 playerPosition)
+        {
+            if (!useTopExitTarget)
+                return topExitDirection;
+
+            Vector3 direction = topExitTarget - playerPosition;
+            direction.y = 0f;
+            return direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
+        }
 
         private void Awake()
         {

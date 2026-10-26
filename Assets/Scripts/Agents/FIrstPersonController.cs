@@ -123,6 +123,14 @@ public class FirstPersonController : MonoBehaviour
             }
 
             verticalVelocity = 0f;
+            if (input.y > 0f && currentLadder.ShouldExitAtTop(transform.position))
+            {
+                Vector3 dismountVelocity = currentLadder.GetTopExitDirection(transform.position) * ladderExitSpeed +
+                                            Vector3.up * (ladderClimbSpeed * 0.35f);
+                controller.Move(dismountVelocity * Time.deltaTime);
+                return;
+            }
+
             Vector3 ladderVelocity = Vector3.up * input.y * ladderClimbSpeed +
                                      transform.right * input.x * ladderExitSpeed;
             controller.Move(ladderVelocity * Time.deltaTime);

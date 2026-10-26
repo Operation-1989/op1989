@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace Operation1989.Interaction.Environment
 {
@@ -43,6 +44,9 @@ namespace Operation1989.Interaction.Environment
         private Quaternion closedRotation;
         private Quaternion targetRotation;
         private Coroutine transitionCoroutine;
+        private Transform proximityInteractor;
+        private float proximityDistance;
+        private bool useProximityInput;
 
         public string InteractionPrompt
         {
@@ -60,6 +64,65 @@ namespace Operation1989.Interaction.Environment
             
             targetPosition = closedPosition;
             targetRotation = closedRotation;
+        }
+
+        private void Update()
+        {
+            if (!useProximityInput || proximityInteractor == null || Keyboard.current == null ||
+                !Keyboard.current.fKey.wasPressedThisFrame)
+                return;
+
+            var doorCollider = GetComponentInChildren<Collider>();
+            Vector3 interactionPoint = doorCollider != null
+                ? doorCollider.ClosestPoint(proximityInteractor.position)
+                : transform.position;
+
+            if (Vector3.Distance(proximityInteractor.position, interactionPoint) <= proximityDistance)
+                Interact(proximityInteractor);
+        }
+
+        /// <summary>
+        /// Configures an imported door whose authored position is its half-open pose.
+        /// Doubling that offset produces a fully open passage without hard-coded world coordinates.
+        /// </summary>
+        public void ConfigureAuthoredSlidingDoor(Transform interactor, Vector3 closedLocalPosition,
+            float interactionDistance = 3.5f, bool startOpen = false)
+        {
+            Vector3 authoredOpenPosition = transform.localPosition;
+            doorType = DoorType.SlidingGate;
+            openPrompt = "[F] Open Door";
+            closePrompt = "[F] Close Door";
+            proximityInteractor = interactor;
+            proximityDistance = interactionDistance;
+            useProximityInput = true;
+
+            closedPosition = closedLocalPosition;
+            openPositionOffset = (authoredOpenPosition - closedPosition) * 2f;
+            closedRotation = transform.localRotation;
+            isOpen = startOpen;
+            targetPosition = isOpen ? closedPosition + openPositionOffset : closedPosition;
+            targetRotation = closedRotation;
+            transform.localPosition = targetPosition;
+        }
+
+        /// <summary>Configures a sliding leaf with an exact authored local-space travel vector.</summary>
+        public void ConfigureSlidingDoor(Transform interactor, Vector3 closedLocalPosition,
+            Vector3 localOpenOffset, float interactionDistance = 3.5f, bool startOpen = false)
+        {
+            doorType = DoorType.SlidingGate;
+            openPrompt = "[F] Open Door";
+            closePrompt = "[F] Close Door";
+            proximityInteractor = interactor;
+            proximityDistance = interactionDistance;
+            useProximityInput = true;
+
+            closedPosition = closedLocalPosition;
+            openPositionOffset = localOpenOffset;
+            closedRotation = transform.localRotation;
+            isOpen = startOpen;
+            targetPosition = isOpen ? closedPosition + openPositionOffset : closedPosition;
+            targetRotation = closedRotation;
+            transform.localPosition = targetPosition;
         }
 
         public void OnHoverEnter() { }

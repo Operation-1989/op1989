@@ -14,7 +14,8 @@ namespace Operation1989.Interaction.Environment
         private CharacterController player;
         private Collider[] doorwayObstacles;
         private float entranceX;
-        private float entranceZ;
+        private float entranceZFront;
+        private float entranceZBack;
         private float groundY;
         private bool ignoring;
 
@@ -30,23 +31,44 @@ namespace Operation1989.Interaction.Environment
             Bounds bounds = interiorFloor.bounds;
             entranceX = bounds.center.x;
             groundY = bounds.min.y;
-            entranceZ = Mathf.Abs(player.transform.position.z - bounds.min.z) <=
-                        Mathf.Abs(player.transform.position.z - bounds.max.z)
-                ? bounds.min.z
-                : bounds.max.z;
+            entranceZFront = bounds.min.z;
+            entranceZBack = bounds.max.z;
 
             var obstacles = new HashSet<Collider>();
-            Vector3 doorwayCenter = new Vector3(entranceX, groundY + 3f, entranceZ);
+            CollectDoorwayObstacles(obstacles, entranceZFront);
+            CollectDoorwayObstacles(obstacles, entranceZBack);
+
+            doorwayObstacles = new Collider[obstacles.Count];
+            obstacles.CopyTo(doorwayObstacles);
+        }
+
+        private void CollectDoorwayObstacles(HashSet<Collider> obstacles, float doorwayZ)
+        {
+            Vector3 doorwayCenter = new Vector3(entranceX, groundY + 3f, doorwayZ);
             foreach (var collider in Physics.OverlapBox(doorwayCenter, new Vector3(5f, 3f, 6f),
                          Quaternion.identity, ~0, QueryTriggerInteraction.Collide))
             {
                 // Preserve horizontal road/floor support while bypassing vertical blockers.
-                if (collider != player && collider.bounds.size.y > 1f)
+                if (collider != player && collider.bounds.size.y > 1f &&
+                    collider.GetComponentInParent<DoorController>() == null &&
+                    !IsProtectedObstacle(collider.transform))
                     obstacles.Add(collider);
             }
+        }
 
-            doorwayObstacles = new Collider[obstacles.Count];
-            obstacles.CopyTo(doorwayObstacles);
+        private static bool IsProtectedObstacle(Transform transform)
+        {
+            for (Transform current = transform; current != null; current = current.parent)
+            {
+                if (current.name.StartsWith("Concrete_Barrier",
+                        System.StringComparison.OrdinalIgnoreCase) ||
+                    current.name.IndexOf("fence", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    current.name.StartsWith("Sci-Fi_door_3_with_animation",
+                        System.StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
 
         private void Update()
@@ -55,9 +77,11 @@ namespace Operation1989.Interaction.Environment
                 return;
 
             Vector3 position = player.transform.position;
+            bool nearEitherDoor = Mathf.Abs(position.z - entranceZFront) <= 8f ||
+                                  Mathf.Abs(position.z - entranceZBack) <= 8f;
             bool inEntranceCorridor =
                 Mathf.Abs(position.x - entranceX) <= 5f &&
-                Mathf.Abs(position.z - entranceZ) <= 8f &&
+                nearEitherDoor &&
                 position.y >= groundY - 1f &&
                 position.y <= groundY + 6f;
 
@@ -75,7 +99,9 @@ namespace Operation1989.Interaction.Environment
         {
             foreach (var obstacle in doorwayObstacles)
             {
-                if (obstacle != null && obstacle != player)
+                if (obstacle != null && obstacle != player &&
+                    obstacle.GetComponentInParent<DoorController>() == null &&
+                    !IsProtectedObstacle(obstacle.transform))
                     Physics.IgnoreCollision(player, obstacle, value);
             }
             ignoring = value;
