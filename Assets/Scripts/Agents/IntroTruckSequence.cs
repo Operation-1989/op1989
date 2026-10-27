@@ -299,6 +299,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
                      delta.normalized, truck.rotation, step + 0.3f, ~0, QueryTriggerInteraction.Ignore))
         {
             if (hit.transform.IsChildOf(truck)) continue;
+            if (hit.collider.GetComponent<Operation1989.Interaction.Environment.GeneratedEnvironmentCollider>() != null) continue;
             if (groundSurfaces != null && System.Array.IndexOf(groundSurfaces, hit.collider) >= 0) continue;
             if (hit.normal.y > 0.7f) continue;
             blocked = true;

@@ -9,6 +9,12 @@ public class FirstPersonController : MonoBehaviour
     public float moveSpeed = 5f;
     public float gravity = -9.81f;
 
+    [Header("Ladder Movement")]
+    [Tooltip("Vertical speed while the player is inside a LadderClimbZone.")]
+    public float ladderClimbSpeed = 3.5f;
+    [Tooltip("Sideways movement used to step off a ladder.")]
+    public float ladderExitSpeed = 2.5f;
+
     [Header("Mouse Look")]
     public Transform playerCamera;
     public float mouseSensitivity = 0.15f;
@@ -18,6 +24,7 @@ public class FirstPersonController : MonoBehaviour
     private float verticalRotation;
     private float verticalVelocity;
     private IntroTruckSequence introSequence;
+    private Operation1989.Interaction.Environment.LadderClimbZone currentLadder;
 
     void Start()
     {
@@ -86,6 +93,10 @@ public class FirstPersonController : MonoBehaviour
         if (Keyboard.current == null)
             return;
 
+        // CharacterController trigger callbacks are not reliable on every imported
+        // ladder prefab, so also query the climb volumes directly each frame.
+        currentLadder = FindNearbyLadder();
+
         Vector2 input = Vector2.zero;
 
         if (Keyboard.current.wKey.isPressed) input.y += 1f;
@@ -99,6 +110,33 @@ public class FirstPersonController : MonoBehaviour
             transform.forward * input.y +
             transform.right * input.x;
 
+        if (currentLadder != null)
+        {
+            // W/S climb. A/D lets the player step away from the ladder; leaving the
+            // trigger naturally restores normal gravity and movement.
+            if (Keyboard.current.spaceKey.wasPressedThisFrame)
+            {
+                currentLadder = null;
+                verticalVelocity = 0f;
+                controller.Move(transform.forward * ladderExitSpeed * Time.deltaTime);
+                return;
+            }
+
+            verticalVelocity = 0f;
+            if (input.y > 0f && currentLadder.ShouldExitAtTop(transform.position))
+            {
+                Vector3 dismountVelocity = currentLadder.GetTopExitDirection(transform.position) * ladderExitSpeed +
+                                            Vector3.up * (ladderClimbSpeed * 0.35f);
+                controller.Move(dismountVelocity * Time.deltaTime);
+                return;
+            }
+
+            Vector3 ladderVelocity = Vector3.up * input.y * ladderClimbSpeed +
+                                     transform.right * input.x * ladderExitSpeed;
+            controller.Move(ladderVelocity * Time.deltaTime);
+            return;
+        }
+
         if (controller.isGrounded && verticalVelocity < 0f)
             verticalVelocity = -2f;
 
@@ -109,5 +147,37 @@ public class FirstPersonController : MonoBehaviour
             Vector3.up * verticalVelocity;
 
         controller.Move(velocity * Time.deltaTime);
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        var ladder = other.GetComponentInParent<Operation1989.Interaction.Environment.LadderClimbZone>();
+        if (ladder != null)
+            currentLadder = ladder;
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        var ladder = other.GetComponentInParent<Operation1989.Interaction.Environment.LadderClimbZone>();
+        if (ladder != null && ladder == currentLadder)
+            currentLadder = null;
+    }
+
+    private Operation1989.Interaction.Environment.LadderClimbZone FindNearbyLadder()
+    {
+        Vector3 center = transform.TransformPoint(controller.center);
+        float halfHeight = Mathf.Max(0f, controller.height * 0.5f - controller.radius);
+        Vector3 bottom = center - Vector3.up * halfHeight;
+        Vector3 top = center + Vector3.up * halfHeight;
+
+        foreach (var hit in Physics.OverlapCapsule(bottom, top, controller.radius + 0.15f,
+                     ~0, QueryTriggerInteraction.Collide))
+        {
+            var ladder = hit.GetComponentInParent<Operation1989.Interaction.Environment.LadderClimbZone>();
+            if (ladder != null)
+                return ladder;
+        }
+
+        return null;
     }
 }

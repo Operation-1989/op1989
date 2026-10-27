@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace Operation1989.Interaction.Core
 {
@@ -80,15 +81,30 @@ namespace Operation1989.Interaction.Core
         {
             if (heldObject != null)
             {
-                if (Input.GetKeyDown(throwKey))
+                if (WasPressedThisFrame(throwKey))
                 {
                     ThrowObject();
                 }
-                else if (Input.GetKeyDown(dropKey))
+                else if (WasPressedThisFrame(dropKey))
                 {
                     DropObject();
                 }
             }
+        }
+
+        private static bool WasPressedThisFrame(KeyCode key)
+        {
+            if (key == KeyCode.Mouse0)
+                return Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+
+            if (Keyboard.current == null) return false;
+            return key switch
+            {
+                KeyCode.G => Keyboard.current.gKey.wasPressedThisFrame,
+                KeyCode.E => Keyboard.current.eKey.wasPressedThisFrame,
+                KeyCode.F => Keyboard.current.fKey.wasPressedThisFrame,
+                _ => false
+            };
         }
 
         private void FixedUpdate()
