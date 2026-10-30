@@ -20,7 +20,7 @@ public sealed class CombatHealth : MonoBehaviour
         Current=Mathf.Max(0,Current-amount);hurtUntil=Time.time+.18f;
         var guard=GetComponent<BarricadePatrolSoldier>();if(guard)guard.Alert();
         if(!Dead)return;
-        if(isPlayer) {respawnAt=Time.unscaledTime+respawnDelay;GetComponent<FirstPersonController>().enabled=false;Cursor.lockState=CursorLockMode.None;Cursor.visible=true;}
+        if(isPlayer) {FindAnyObjectByType<IntelTheftMission>()?.ResetForCheckpoint();respawnAt=Time.unscaledTime+respawnDelay;GetComponent<FirstPersonController>().enabled=false;Cursor.lockState=CursorLockMode.None;Cursor.visible=true;}
         else
         {
             if(guard)guard.enabled=false;
