@@ -70,4 +70,5 @@ public sealed class CombatHealth : MonoBehaviour
         if(Time.time<hurtUntil) {var color=GUI.color;GUI.color=new Color(1,.1f,.05f,.16f);GUI.DrawTexture(new Rect(0,0,Screen.width,Screen.height),Texture2D.whiteTexture);GUI.color=color;}
         hud.Draw(this,Mathf.Max(0,respawnAt-Time.unscaledTime));
     }
+    void OnDestroy(){hud.Dispose();}
 }
