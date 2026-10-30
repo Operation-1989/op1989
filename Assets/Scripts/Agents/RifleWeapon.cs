@@ -55,19 +55,24 @@ public sealed class RifleWeapon : MonoBehaviour
             // A camera can see over cover while the barrel remains behind it.
             if(Trace(start,(end-start).normalized,Vector3.Distance(start,end),transform,out var barrelHit))
             {hit=barrelHit;end=hit.point;}
-            var health=hit.collider.GetComponentInParent<CombatHealth>();
-            if(health)health.TakeDamage(damage);
+            DamageTarget(hit);
         }
         else if(Trace(start,(end-start).normalized,Vector3.Distance(start,end),transform,out var barrelHit))
         {
-            end=barrelHit.point;var health=barrelHit.collider.GetComponentInParent<CombatHealth>();
-            if(health)health.TakeDamage(damage);
+            end=barrelHit.point;DamageTarget(barrelHit);
         }
         ShotsFired++;
         if(shotSound) {audioSource.pitch=UnityEngine.Random.Range(.95f,1.05f);audioSource.PlayOneShot(shotSound,playerWeapon?.55f:.7f);}
         tracer.SetPosition(0,start);tracer.SetPosition(1,end);tracer.enabled=true;
         flash.SetPosition(0,start);flash.SetPosition(1,start+direction*.38f);flash.enabled=true;
         muzzleLight.transform.position=start;muzzleLight.enabled=true;visibleUntil=Time.time+.045f;
+    }
+    void DamageTarget(RaycastHit hit)
+    {
+        var drone=hit.collider.GetComponentInParent<DroneDamage>();
+        if(drone) {drone.TakeDamage(damage,hit.point);return;}
+        var health=hit.collider.GetComponentInParent<CombatHealth>();
+        if(health)health.TakeDamage(damage);
     }
     void Update(){if(Time.time>=visibleUntil)Hide();}
     void Hide(){if(tracer)tracer.enabled=false;if(flash)flash.enabled=false;if(muzzleLight)muzzleLight.enabled=false;}

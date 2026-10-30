@@ -2,6 +2,7 @@ using UnityEngine;
 
 /// <summary>Visible launch followed by a repeating survey sweep. Detection is deliberately separate.</summary>
 [DisallowMultipleComponent]
+[RequireComponent(typeof(DroneDamage))]
 public sealed class DroneMapPatrol : MonoBehaviour
 {
     public Transform launchPoint;
@@ -26,6 +27,12 @@ public sealed class DroneMapPatrol : MonoBehaviour
     double audioStartDsp;
     Vector3 launchPosition;
     Quaternion launchRotation;
+
+    void Awake()
+    {
+        // Also upgrade drones already saved in scenes before DroneDamage was introduced.
+        if (!GetComponent<DroneDamage>()) gameObject.AddComponent<DroneDamage>();
+    }
 
     void OnEnable() => ResetFlight();
 

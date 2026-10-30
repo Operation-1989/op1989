@@ -72,13 +72,24 @@ namespace Operation1989.Interaction.Environment
                 !Keyboard.current.fKey.wasPressedThisFrame)
                 return;
 
+            TryProximityInteract();
+        }
+
+        public bool IsOpen => isOpen;
+        public bool TryProximityInteract()
+        {
+            if (!useProximityInput || !proximityInteractor || isLocked) return false;
+            var intel = FindAnyObjectByType<IntelTheftMission>();
+            if (intel && intel.OwnsTerminalInput) return false;
+
             var doorCollider = GetComponentInChildren<Collider>();
             Vector3 interactionPoint = doorCollider != null
                 ? doorCollider.ClosestPoint(proximityInteractor.position)
                 : transform.position;
 
             if (Vector3.Distance(proximityInteractor.position, interactionPoint) <= proximityDistance)
-                Interact(proximityInteractor);
+            { Interact(proximityInteractor); return true; }
+            return false;
         }
 
         /// <summary>
