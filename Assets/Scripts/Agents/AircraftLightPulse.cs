@@ -27,6 +27,15 @@ public sealed class AircraftLightPulse : MonoBehaviour
     void OnEnable() { initialized = false; Apply(IsLitAt(Time.time)); }
     void Update() => Apply(IsLitAt(Time.time));
 
+    public void SwitchOff()
+    {
+        enabled = false;
+        // OnDisable restores the lamp's normal appearance; explicitly remove its
+        // illumination and lens emission for a vehicle that has lost power.
+        initialized = false;
+        Apply(false);
+    }
+
     void Apply(bool lit)
     {
         if (initialized && previous == lit) return;
