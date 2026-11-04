@@ -22,6 +22,8 @@ public static class HelicopterOutroValidation
     static Quaternion rotor;
     static Material priorSky;
     static float priorSunIntensity;
+    static float audioCheckAt, indoorVolume, distantVolume;
+    static readonly HashSet<int> observerAngles = new HashSet<int>();
     struct Snapshot { public string name; public Vector3 heli, camera; public Quaternion heliRotation, cameraRotation; public float fov, sunsetBlend; }
     static readonly List<Snapshot> snapshots = new List<Snapshot>();
     static int snapshotIndex, poseFrame;
@@ -54,7 +56,7 @@ public static class HelicopterOutroValidation
         if (state != PlayModeStateChange.EnteredPlayMode) return;
         lateMode = SessionState.GetBool("OutroLateBoarding", false);
         EditorApplication.playModeStateChanged -= Changed;
-        stage = shots = 0; snapshots.Clear(); deadline = EditorApplication.timeSinceStartup + 300;
+        stage = shots = 0; snapshots.Clear(); observerAngles.Clear(); deadline = EditorApplication.timeSinceStartup + 300;
         background = Application.runInBackground; Application.runInBackground = true;
         EditorApplication.update -= Tick; EditorApplication.update += Tick;
     }
@@ -69,9 +71,9 @@ public static class HelicopterOutroValidation
         Move(mission.terminal.InteractionFrame.TransformPoint(new Vector3(0, .3f, -1.3f)));
         mission.playerCamera.transform.LookAt(mission.terminal.InteractionFrame.position + Vector3.up * .3f);
     }
-    static void Capture(string name)
+    static void Capture(string name, Camera alternate = null)
     {
-        var camera = mission.playerCamera;
+        var camera = alternate ? alternate : mission.playerCamera;
         var previous = camera.targetTexture; var active = RenderTexture.active;
         var rt = new RenderTexture(1280, 720, 24);
         var texture = new Texture2D(1280, 720, TextureFormat.RGB24, false);
@@ -82,6 +84,12 @@ public static class HelicopterOutroValidation
             File.WriteAllBytes(Work + "/" + name + ".png", texture.EncodeToPNG());
         }
         finally { camera.targetTexture = previous; RenderTexture.active = active; Object.DestroyImmediate(rt); Object.DestroyImmediate(texture); }
+    }
+    static Vector3 BorderPoint(Vector2 direction, float clearance)
+    {
+        var zone = mission.extraction;
+        Vector2 support = zone.bodyFootprint.OrderByDescending(p => Vector2.Dot(p, direction)).First() + direction * clearance;
+        return zone.helicopter.position + zone.helicopter.rotation * new Vector3(support.x, .2f, support.y);
     }
     static void Remember(string name)
     {
@@ -94,6 +102,8 @@ public static class HelicopterOutroValidation
         EditorApplication.QueuePlayerLoopUpdate();
         try
         {
+            if (mission && mission.outro && mission.outro.observerViews)
+                observerAngles.Add(mission.outro.observerViews.CinematicShotIndex);
             if (EditorApplication.timeSinceStartup > deadline) throw new TimeoutException("Outro validation timed out at stage " + stage);
             if (stage == 0)
             {
@@ -106,6 +116,20 @@ public static class HelicopterOutroValidation
                 parked = outro.helicopter.position; rotor = outro.mainRotor.localRotation;
                 priorSky = RenderSettings.skybox; priorSunIntensity = outro.sunset.sunlight.intensity;
                 Check("Takeoff uses the recording's 55-second cue", Mathf.Approximately(outro.takeoffAudioSeconds, 55));
+                Check("Indoor engine muffling is bound to the control room", outro.engineMuffleRoom);
+                var observers = outro.observerViews;
+                Check("Front and cinematic cameras use Displays 4 and 5", observers && observers.frontCamera && observers.cinematicCamera &&
+                    observers.frontCamera.targetDisplay == 3 && observers.cinematicCamera.targetDisplay == 4 && observers.frontCamera.enabled && observers.cinematicCamera.enabled);
+                Check("Additional views do not add audio listeners", !observers.frontCamera.GetComponent<AudioListener>() && !observers.cinematicCamera.GetComponent<AudioListener>() && mission.playerCamera.targetDisplay == 0);
+                Check("Body perimeter uses one game metre of clearance", mission.extraction.bodyFootprint != null && mission.extraction.bodyFootprint.Length >= 3 && Mathf.Approximately(mission.extraction.boardingClearance, 1));
+                foreach (Vector2 direction in new[] { Vector2.right, Vector2.left, Vector2.up, Vector2.down })
+                {
+                    Check("Boarding works around body edge " + direction, mission.extraction.Contains(BorderPoint(direction, .75f)));
+                    Check("Outside the metre border is excluded " + direction, !mission.extraction.Contains(BorderPoint(direction, 1.25f)));
+                }
+                Vector3 rotorOnly = outro.helicopter.position + outro.helicopter.rotation * new Vector3(6.5f, .2f, 0);
+                Check("Rotor reach does not count as boarding", !mission.extraction.Contains(rotorOnly));
+                Check("Existing objective marker is inside the new boarding area", mission.extraction.Contains(mission.extraction.transform.position));
                 // Shorten only the unboarded idle wait in the late-arrival smoke run.
                 if (lateMode) outro.takeoffAudioSeconds = 9;
                 Check("Cannot board before stealing intel", !mission.TryExtract());
@@ -119,8 +143,28 @@ public static class HelicopterOutroValidation
                 Aim(); Check("USB removal enables escape", mission.InteractWithTerminal() && mission.State == IntelTheftMission.Phase.Escape);
                 Check("USB removal starts the helicopter before running to extraction", outro.RotorsStarting && !outro.Running);
                 Check("Cannot extract remotely", !mission.TryExtract());
-                Move(mission.extraction.transform.position + Vector3.right * 6);
-                stage = 2; return;
+                var engine = outro.helicopter.GetComponentsInChildren<AudioSource>().First(s => s.name == "Helicopter startup");
+                indoorVolume = engine.volume;
+                Check("Helicopter is barely audible inside the intel room", outro.ListenerIndoors && indoorVolume <= .01f && engine.GetComponent<AudioLowPassFilter>().enabled);
+                mission.enabled = false;
+                Move(new Vector3(-8, .1f, 10)); audioCheckAt = Time.unscaledTime;
+                stage = 20; return;
+            }
+            if (stage == 20)
+            {
+                if (Time.unscaledTime - audioCheckAt < 1) return;
+                var engine = outro.helicopter.GetComponentsInChildren<AudioSource>().First(s => s.name == "Helicopter startup");
+                distantVolume = engine.volume;
+                Check("Engine becomes audible after leaving the room", !outro.ListenerIndoors && distantVolume > indoorVolume * 2 && engine.spatialBlend == 1);
+                Move(BorderPoint(Vector2.right, 5)); audioCheckAt = Time.unscaledTime;
+                stage = 21; return;
+            }
+            if (stage == 21)
+            {
+                if (Time.unscaledTime - audioCheckAt < 1) return;
+                var engine = outro.helicopter.GetComponentsInChildren<AudioSource>().First(s => s.name == "Helicopter startup");
+                Check("Engine gets louder closer to the helicopter", engine.volume > distantVolume * 1.25f);
+                mission.enabled = true; stage = 2; return;
             }
             if (stage == 2)
             {
@@ -133,7 +177,7 @@ public static class HelicopterOutroValidation
                     Check("Helicopter does not take off without its pilot", !outro.Running && Vector3.Distance(outro.helicopter.position, parked) < .01f);
                 }
                 Check("Rotors are turning while the player is still outside", Quaternion.Angle(rotor, outro.mainRotor.localRotation) > .1f && !outro.Running);
-                Move(mission.extraction.transform.position + Vector3.up * .5f);
+                Move(BorderPoint(Vector2.up, .75f));
                 stage = 3; return;
             }
             if (stage == 3)
@@ -197,6 +241,7 @@ public static class HelicopterOutroValidation
                 Check("Mission completes only after outro and fade", mission.State == IntelTheftMission.Phase.Complete && !outro.Running);
                 Check("Helicopter leaves beyond the main gate", Vector3.Dot(outro.helicopter.position - outro.gatePosition, (outro.gatePosition - parked).normalized) > 50);
                 Check("Departure lighting becomes darker with an orange sky", outro.sunset.Blend > .99f && outro.sunset.sunlight.intensity < priorSunIntensity && RenderSettings.skybox != priorSky);
+                Check("Display 5 shows multiple cinematic angles", observerAngles.Count >= 3);
                 snapshotIndex = 0; stage = 7; return;
             }
             if (stage == 7)
@@ -214,7 +259,7 @@ public static class HelicopterOutroValidation
                 Check("Replay resets mission, helicopter, and controls", mission.State == IntelTheftMission.Phase.FindComputer && !outro.Finished && !outro.Running && Vector3.Distance(outro.helicopter.position, parked) < .01f && mission.player.GetComponent<FirstPersonController>().enabled);
                 Check("Replay restores player vulnerability", !mission.player.GetComponent<CombatHealth>().CinematicProtection);
                 Check("Replay restores the original lighting", RenderSettings.skybox == priorSky && Mathf.Approximately(outro.sunset.sunlight.intensity, priorSunIntensity));
-                stage = 9; return;
+                poseFrame = Time.frameCount; stage = 9; return;
             }
             if (stage == 8)
             {
@@ -224,6 +269,9 @@ public static class HelicopterOutroValidation
             }
             if (stage == 9)
             {
+                if (Time.frameCount < poseFrame + 2) return;
+                Capture("view-4-front", outro.observerViews.frontCamera);
+                Capture("view-5-cinematic", outro.observerViews.cinematicCamera);
                 Check("Checkpoint can start a new theft after extraction", mission.State == IntelTheftMission.Phase.FindComputer);
                 File.AppendAllText(ReportPath, "PASS COMPLETE\n"); Stop();
             }

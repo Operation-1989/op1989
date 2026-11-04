@@ -14,6 +14,13 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     public Vector3 exteriorTravelOffset = new Vector3(14, 0, 0);
     [Range(35, 90)] public float exteriorFieldOfView = 70;
     public OutroSunsetTransition sunset;
+    public HelicopterObserverViews observerViews;
+    public BoxCollider engineMuffleRoom;
+    [Range(0, .1f)] public float indoorEngineGain = .01f;
+    [Min(1)] public float nearEngineDistance = 8;
+    [Min(10)] public float engineFadeDistance = 110;
+    public float ApproachVolumeScale { get; private set; }
+    public bool ListenerIndoors { get; private set; }
     [Min(.25f)] public float spoolSeconds = 2;
     [Min(.25f)] public float boardingLeadSeconds = 2;
     [Min(1)] public float takeoffAudioSeconds = 55;
@@ -38,6 +45,9 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     public int ShotIndex { get; private set; } = -1;
 
     AudioSource startup, chatter, idle;
+    AudioLowPassFilter startupMuffle, idleMuffle;
+    float obstructionGain = 1, obstructionTarget = 1;
+    float nextObstructionCheck;
     AudioClip idleClip;
     bool idleScheduled, handoffActive;
     double startupAt, boardedAt, rotorsStartedAt;
@@ -71,8 +81,44 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         chatter = MakeSource("Helicopter radio chatter", chatterClip, false);
         idle = MakeSource("Helicopter waiting for pilot", null, true);
         foreach (var clip in new[] { startupClip, chatterClip }) if (clip) clip.LoadAudioData();
-        VehicleAudioFalloff.Configure(startup, 10, 140, 200);
-        VehicleAudioFalloff.Configure(idle, 10, 140, 200);
+        ConfigureApproachSource(startup); ConfigureApproachSource(idle);
+        startupMuffle = startup.gameObject.AddComponent<AudioLowPassFilter>();
+        idleMuffle = idle.gameObject.AddComponent<AudioLowPassFilter>();
+    }
+    void ConfigureApproachSource(AudioSource source)
+    {
+        source.spatialBlend = 1; source.minDistance = nearEngineDistance; source.maxDistance = engineFadeDistance;
+        source.rolloffMode = AudioRolloffMode.Custom;
+        // Distance gain is applied below, with a flat spatial curve to avoid double attenuation.
+        source.SetCustomCurve(AudioSourceCurveType.CustomRolloff, AnimationCurve.Constant(0, 1, 1));
+    }
+    void UpdateApproachAudio(bool immediate = false)
+    {
+        if (!mission.player) return;
+        Vector3 position = mission.player.position;
+        if (immediate || Time.unscaledTime >= nextObstructionCheck)
+        {
+            nextObstructionCheck = Time.unscaledTime + .1f;
+            ListenerIndoors = engineMuffleRoom && new Bounds(engineMuffleRoom.center, engineMuffleRoom.size)
+                .Contains(engineMuffleRoom.transform.InverseTransformPoint(position));
+            obstructionTarget = ListenerIndoors ? indoorEngineGain : 1;
+            if (!ListenerIndoors)
+            {
+                Vector3 head = position + Vector3.up * 1.6f;
+                Vector3 direction = helicopter.position + Vector3.up * 2 - head;
+                foreach (var hit in Physics.RaycastAll(head, direction.normalized, direction.magnitude, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    if (hit.transform.IsChildOf(mission.player) || hit.transform.IsChildOf(helicopter)) continue;
+                    obstructionTarget = .12f; break;
+                }
+            }
+        }
+        obstructionGain = immediate ? obstructionTarget : Mathf.MoveTowards(obstructionGain, obstructionTarget, Time.unscaledDeltaTime / .6f);
+        float distanceGain = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(engineFadeDistance, nearEngineDistance, Vector3.Distance(position, helicopter.position)));
+        ApproachVolumeScale = distanceGain * obstructionGain;
+        float cutoff = Mathf.Lerp(750, 22000, obstructionGain);
+        if (startupMuffle) { startupMuffle.enabled = true; startupMuffle.cutoffFrequency = cutoff; }
+        if (idleMuffle) { idleMuffle.enabled = true; idleMuffle.cutoffFrequency = cutoff; }
     }
     AudioSource MakeSource(string label, AudioClip clip, bool loop)
     {
@@ -87,12 +133,13 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         Initialize();
         if (!initialized) return;
         if (starting || Finished) return;
+        UpdateApproachAudio(true);
         starting = true; rotorsStartedAt = AudioSettings.dspTime;
         // Use the running-engine part while the player returns, skipping the long windup.
         float runupOffset = Mathf.Max(0, takeoffAudioSeconds - boardingLeadSeconds - 8);
         double startsAt = AudioSettings.dspTime + .05;
         startupAt = startsAt - runupOffset;
-        startup.time = runupOffset; startup.volume = .85f; startup.PlayScheduled(startsAt);
+        startup.time = runupOffset; startup.volume = .85f * ApproachVolumeScale; startup.PlayScheduled(startsAt);
         // Stop before the takeoff cue if the player needs longer to reach the aircraft.
         startup.SetScheduledEndTime(startupAt + takeoffAudioSeconds - boardingLeadSeconds);
         ScheduleIdle();
@@ -113,7 +160,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
             for (int channel = 0; channel < startupClip.channels; channel++) samples[i * startupClip.channels + channel] *= fade;
         }
         idleClip = AudioClip.Create("Helicopter pre-takeoff idle", frames, startupClip.channels, startupClip.frequency, false);
-        idleClip.SetData(samples, 0); idle.clip = idleClip; idle.volume = .85f; idle.loop = true;
+        idleClip.SetData(samples, 0); idle.clip = idleClip; idle.volume = .85f * ApproachVolumeScale; idle.loop = true;
         idle.PlayScheduled(System.Math.Max(AudioSettings.dspTime + .02, startupAt + takeoffAudioSeconds - boardingLeadSeconds));
         idleScheduled = true;
     }
@@ -125,6 +172,8 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         bool wasHolding = HoldingForPilot;
         float previousCursor = RecordingTime;
         Running = true; boardedAt = AudioSettings.dspTime;
+        if (startupMuffle) startupMuffle.enabled = false;
+        if (idleMuffle) idleMuffle.enabled = false;
         // Fade the old engine audio under the edited takeoff lead-in, without changing pitch.
         if (!wasHolding)
         {
@@ -173,6 +222,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         Initialize();
         if (!initialized) return;
         if (!starting || Finished) return;
+        if (!Running) UpdateApproachAudio();
         if (!idleScheduled && !Running) ScheduleIdle();
         float spool = Mathf.Clamp01((float)(AudioSettings.dspTime - rotorsStartedAt) / spoolSeconds);
         RotorSpeed = Mathf.SmoothStep(0, 1, spool);
@@ -183,7 +233,8 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         // Keep the original recording, at its original pitch, through the departure.
         float fadeOut = Running ? 1 - Mathf.Clamp01((Elapsed - EndsAt + 2) / 2) : 1;
         float blend = Running ? Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.05f, .25f, Elapsed)) : 1;
-        startup.volume = (Running ? chatter.isPlaying ? .42f : .68f : .85f) * fadeOut * blend;
+        startup.volume = (Running ? chatter.isPlaying ? .42f : .68f : .85f * ApproachVolumeScale) * fadeOut * blend;
+        if (!Running) idle.volume = .85f * ApproachVolumeScale;
         if (handoffActive)
         {
             idle.volume = .68f * (1 - blend);
@@ -259,10 +310,12 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         if (chatter) chatter.Stop(); if (idle) { idle.Stop(); idle.spatialBlend = 1; }
         if (idleClip) Destroy(idleClip); idleClip = null; idleScheduled = false;
         handoffActive = false;
+        ApproachVolumeScale = 0;
         if (sunset) sunset.ResetLighting();
         if (helicopter) helicopter.SetPositionAndRotation(parkedPosition, parkedRotation);
         if (mainRotor) mainRotor.localRotation = mainRotation;
         if (tailRotor) tailRotor.localRotation = tailRotation;
+        if (observerViews) observerViews.ResetViews();
         SetBlades(false);
         if (hadBoarded)
         {

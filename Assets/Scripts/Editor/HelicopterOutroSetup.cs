@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -107,11 +108,93 @@ public static class HelicopterOutroSetup
         sunset.sunsetSky = sky;
         sunset.sunlight = RenderSettings.sun ? RenderSettings.sun : Object.FindObjectsByType<Light>().First(l => l.type == LightType.Directional && l.enabled && l.intensity > 0);
         outro.sunset = sunset; EditorUtility.SetDirty(sunset);
+        var ambience = Object.FindAnyObjectByType<MissionAmbientAudio>();
+        outro.engineMuffleRoom = ambience ? ambience.controlRoom : null;
+        outro.indoorEngineGain = .01f; outro.nearEngineDistance = 8; outro.engineFadeDistance = 110;
+        ConfigureBoarding(mission.extraction, heli);
+        ConfigureObserverViews(mission, outro, heli);
         EditorUtility.SetDirty(outro); EditorUtility.SetDirty(mission);
         EditorSceneManager.MarkSceneDirty(heli.gameObject.scene);
         EditorSceneManager.SaveScene(heli.gameObject.scene); AssetDatabase.SaveAssets();
         File.WriteAllText(Work + "/installed.txt", $"Installed in {heli.gameObject.scene.path}\nPilot eyes: {eyes.position:F3}\nUSB removal starts the running-engine audio and rotors. Boarding cuts to the takeoff lead-in with a 0.2s crossfade.\nTakeoff: {outro.boardingLeadSeconds:F3}s after boarding, aligned to the recording's {outro.takeoffAudioSeconds:F3}s cue.\nChatter: {outro.chatterClip.length:F3}s; exterior begins exactly 3s after chatter.\nGate: {outro.gatePosition}\nOne {outro.exteriorFieldOfView} degree shot travels {outro.exteriorTravelOffset} across the road, tracking the helicopter.\nDeparture-only orange dusk transition.\n");
         IntelTheftSetup.Capture(eyes.position, eyes.position + eyes.forward * 10, "outro-pilot-installed");
+    }
+    static void ConfigureBoarding(HelicopterExtractionZone extraction, Transform heli)
+    {
+        var bodyNames = new HashSet<string> { "defalt", "cargo_door_l", "cargo_door_r", "pilot_door", "co_pilot_door", "grass", "navy_camera", "navy_camera1" };
+        var points = new List<Vector2>();
+        Quaternion inverse = Quaternion.Inverse(heli.rotation);
+        foreach (var mesh in heli.GetComponentsInChildren<MeshFilter>(true))
+        {
+            if (!bodyNames.Contains(mesh.name) || !mesh.sharedMesh) continue;
+            foreach (var vertex in mesh.sharedMesh.vertices)
+            {
+                Vector3 p = inverse * (mesh.transform.TransformPoint(vertex) - heli.position);
+                points.Add(new Vector2(p.x, p.z));
+            }
+        }
+        var sorted = points.Distinct().OrderBy(p => p.x).ThenBy(p => p.y).ToArray();
+        if (sorted.Length < 3) throw new InvalidOperationException("Helicopter body geometry is missing.");
+        float Cross(Vector2 a, Vector2 b, Vector2 c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        var hull = new List<Vector2>();
+        foreach (var p in sorted)
+        {
+            while (hull.Count >= 2 && Cross(hull[hull.Count - 2], hull[hull.Count - 1], p) <= .00001f) hull.RemoveAt(hull.Count - 1);
+            hull.Add(p);
+        }
+        int lower = hull.Count;
+        for (int i = sorted.Length - 2; i >= 0; i--)
+        {
+            var p = sorted[i];
+            while (hull.Count > lower && Cross(hull[hull.Count - 2], hull[hull.Count - 1], p) <= .00001f) hull.RemoveAt(hull.Count - 1);
+            hull.Add(p);
+        }
+        hull.RemoveAt(hull.Count - 1);
+        Undo.RecordObject(extraction, "Expand helicopter automatic boarding");
+        extraction.helicopter = heli; extraction.bodyFootprint = hull.ToArray(); extraction.boardingClearance = 1;
+        extraction.minimumBoardingHeight = -.5f; extraction.maximumBoardingHeight = 3;
+        Vector2 side = hull.OrderByDescending(p => p.x).First();
+        Vector3 markerPosition = heli.position + heli.rotation * new Vector3(side.x + .5f, 0, side.y);
+        markerPosition.y = extraction.transform.position.y;
+        Undo.RecordObject(extraction.transform, "Keep boarding marker inside expanded zone");
+        extraction.transform.position = markerPosition;
+        var box = extraction.GetComponent<BoxCollider>();
+        Undo.RecordObject(box, "Resize boarding trigger");
+        var bounds = new Bounds(heli.position + heli.rotation * new Vector3(hull[0].x, 1.25f, hull[0].y), Vector3.zero);
+        foreach (var p in hull) bounds.Encapsulate(heli.position + heli.rotation * new Vector3(p.x, 1.25f, p.y));
+        box.center = extraction.transform.InverseTransformPoint(bounds.center);
+        Vector3 size = new Vector3(bounds.size.x + 2, 3.5f, bounds.size.z + 2);
+        Vector3 scale = extraction.transform.lossyScale;
+        box.size = new Vector3(size.x / Mathf.Abs(scale.x), size.y / Mathf.Abs(scale.y), size.z / Mathf.Abs(scale.z));
+        box.isTrigger = true;
+        EditorUtility.SetDirty(box); EditorUtility.SetDirty(extraction);
+        File.WriteAllText(Work + "/boarding-footprint.txt", $"Body-only hull: {hull.Count} vertices, 1m clearance; rotor meshes excluded.\n" + string.Join("\n", hull));
+    }
+    static void ConfigureObserverViews(IntelTheftMission mission, HelicopterOutroSequence outro, Transform heli)
+    {
+        var root = mission.transform.Find("Helicopter observer views");
+        if (!root) { root = new GameObject("Helicopter observer views").transform; root.SetParent(mission.transform, false); }
+        var views = root.GetComponent<HelicopterObserverViews>();
+        if (!views) views = Undo.AddComponent<HelicopterObserverViews>(root.gameObject);
+        Camera MakeCamera(string name, int display, float fov)
+        {
+            var child = root.Find(name);
+            if (!child) { child = new GameObject(name).transform; child.SetParent(root, false); }
+            var camera = child.GetComponent<Camera>();
+            if (!camera) camera = Undo.AddComponent<Camera>(child.gameObject);
+            camera.CopyFrom(mission.playerCamera); camera.targetTexture = null;
+            camera.targetDisplay = display; camera.fieldOfView = fov; camera.nearClipPlane = .05f;
+            camera.rect = new Rect(0, 0, 1, 1); camera.enabled = true;
+            var data = child.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+            if (!data) data = Undo.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>(child.gameObject);
+            data.renderPostProcessing = true; EditorUtility.SetDirty(camera); EditorUtility.SetDirty(data);
+            return camera;
+        }
+        views.helicopter = heli;
+        views.frontCamera = MakeCamera("Helicopter Front Camera (Display 4)", 3, 55);
+        views.cinematicCamera = MakeCamera("Helicopter Cinematic Camera (Display 5)", 4, 55);
+        views.ResetViews(); outro.observerViews = views;
+        EditorUtility.SetDirty(views);
     }
     static void Inspect()
     {
