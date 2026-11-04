@@ -85,16 +85,16 @@ public static class HelicopterOutroSetup
         outro.pilotEyes = eyes;
         outro.startupClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Vehicles/HelicopterStart.mp3");
         outro.chatterClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Ambiance/HelicopterChatter.mp3");
-        outro.spoolSeconds = 12; outro.takeoffAudioSeconds = 55; outro.afterChatterSeconds = 3;
+        outro.spoolSeconds = 2; outro.boardingLeadSeconds = 2;
+        outro.takeoffAudioSeconds = 55; outro.afterChatterSeconds = 3;
         outro.gatePosition = mission.intro ? mission.intro.entryPlanePoint : new Vector3(4, 0, -90);
         var anchor = mission.transform.Find("Outro main building camera");
         if (!anchor) { anchor = new GameObject("Outro main building camera").transform; anchor.SetParent(mission.transform, false); }
         // Front of the main building, beside the entrance barricades in the reference image.
         anchor.position = new Vector3(-8, 2.3f, 10);
         outro.exteriorCameraAnchor = anchor;
-        outro.exteriorLookStart = new Vector3(35, 18, -20);
-        outro.exteriorLookEnd = new Vector3(0, 20, -110);
-        anchor.LookAt(outro.exteriorLookStart);
+        outro.exteriorTravelOffset = new Vector3(14, 0, 0);
+        anchor.LookAt(heli.position + Vector3.up * 18);
         outro.exteriorFieldOfView = 70;
         var sunset = mission.GetComponent<OutroSunsetTransition>();
         if (!sunset) sunset = Undo.AddComponent<OutroSunsetTransition>(mission.gameObject);
@@ -110,7 +110,7 @@ public static class HelicopterOutroSetup
         EditorUtility.SetDirty(outro); EditorUtility.SetDirty(mission);
         EditorSceneManager.MarkSceneDirty(heli.gameObject.scene);
         EditorSceneManager.SaveScene(heli.gameObject.scene); AssetDatabase.SaveAssets();
-        File.WriteAllText(Work + "/installed.txt", $"Installed in {heli.gameObject.scene.path}\nPilot eyes: {eyes.position:F3}\nUSB removal starts the recording and rotors. Takeoff cue: {outro.takeoffAudioSeconds:F3}s.\nChatter: {outro.chatterClip.length:F3}s; exterior begins exactly 3s after chatter.\nStartup: {outro.startupClip.length:F3}s, retained through departure.\nGate: {outro.gatePosition}\nSingle wide shot at {anchor.position:F3}, {outro.exteriorFieldOfView} degree FOV, with a gentle pan.\nDeparture-only orange dusk transition.\n");
+        File.WriteAllText(Work + "/installed.txt", $"Installed in {heli.gameObject.scene.path}\nPilot eyes: {eyes.position:F3}\nUSB removal starts the running-engine audio and rotors. Boarding cuts to the takeoff lead-in with a 0.2s crossfade.\nTakeoff: {outro.boardingLeadSeconds:F3}s after boarding, aligned to the recording's {outro.takeoffAudioSeconds:F3}s cue.\nChatter: {outro.chatterClip.length:F3}s; exterior begins exactly 3s after chatter.\nGate: {outro.gatePosition}\nOne {outro.exteriorFieldOfView} degree shot travels {outro.exteriorTravelOffset} across the road, tracking the helicopter.\nDeparture-only orange dusk transition.\n");
         IntelTheftSetup.Capture(eyes.position, eyes.position + eyes.forward * 10, "outro-pilot-installed");
     }
     static void Inspect()

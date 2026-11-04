@@ -97,7 +97,7 @@ public static class HelicopterOutroValidation
             if (EditorApplication.timeSinceStartup > deadline) throw new TimeoutException("Outro validation timed out at stage " + stage);
             if (stage == 0)
             {
-                if (Time.time < .5f) return;
+                if (Time.time < 3) return;
                 mission = Object.FindAnyObjectByType<IntelTheftMission>(); outro = mission.outro;
                 Check("Installed helicopter, window view, single camera, sunset, and recordings", outro && outro.helicopter && outro.pilotEyes && outro.exteriorCameraAnchor && outro.sunset && outro.mainRotor && outro.tailRotor && outro.startupClip && outro.chatterClip);
                 foreach (var guard in Object.FindObjectsByType<BarricadePatrolSoldier>()) guard.enabled = false;
@@ -106,7 +106,7 @@ public static class HelicopterOutroValidation
                 parked = outro.helicopter.position; rotor = outro.mainRotor.localRotation;
                 priorSky = RenderSettings.skybox; priorSunIntensity = outro.sunset.sunlight.intensity;
                 Check("Takeoff uses the recording's 55-second cue", Mathf.Approximately(outro.takeoffAudioSeconds, 55));
-                // Shorten only the late-arrival smoke run; the main run uses the full recording.
+                // Shorten only the unboarded idle wait in the late-arrival smoke run.
                 if (lateMode) outro.takeoffAudioSeconds = 9;
                 Check("Cannot board before stealing intel", !mission.TryExtract());
                 mission.downloadSeconds = .2f; Aim();
@@ -140,6 +140,7 @@ public static class HelicopterOutroValidation
             {
                 if (mission.State != IntelTheftMission.Phase.Extracting) return;
                 Check("Entering the extraction zone automatically boards the pilot", outro.Running && !mission.player.GetComponent<FirstPersonController>().enabled);
+                Check("Takeoff is scheduled two seconds after boarding", Mathf.Abs(outro.LiftOffStartsAt - 2) < .02f);
                 Check("Camera cuts are exactly three seconds after full chatter", Mathf.Abs(outro.ExteriorStartsAt - outro.ChatterStartsAt - outro.chatterClip.length - 3) < .01f);
                 float hp = mission.player.GetComponent<CombatHealth>().Current;
                 mission.player.GetComponent<CombatHealth>().TakeDamage(1000);
@@ -149,16 +150,17 @@ public static class HelicopterOutroValidation
             }
             if (stage == 4)
             {
-                if (outro.PresentedTime < 2) return;
+                if (outro.PresentedTime < .35f) return;
                 Remember("pilot-startup");
                 Check("Startup is viewed from the pilot seat", !outro.ExteriorView && Vector3.Distance(mission.playerCamera.transform.position, outro.pilotEyes.position) < .02f);
-                Check("Helicopter waits on the ground before the audio takeoff cue", outro.RecordingTime < outro.takeoffAudioSeconds && Mathf.Abs(outro.helicopter.position.y - parked.y) < .02f);
+                if (outro.PresentedTime < outro.LiftOffStartsAt)
+                    Check("Helicopter waits only for the short audio lead-in", Mathf.Abs(outro.helicopter.position.y - parked.y) < .02f);
                 if (lateMode)
                 {
                     var resumed = outro.helicopter.GetComponentsInChildren<AudioSource>().First(s => s.name == "Helicopter startup");
                     Check("Late boarding resumes the original recording without pitch changes", resumed.isPlaying && resumed.clip == outro.startupClip && Mathf.Approximately(resumed.pitch, 1));
                     Check("Resumed playback cursor matches the aircraft timeline", Mathf.Abs(resumed.time - outro.RecordingTime) < .5f);
-                    Check("Boarding leaves three seconds before the audio takeoff cue", Mathf.Abs(outro.LiftOffStartsAt - 3.05f) < .15f);
+                    Check("Late boarding also leaves only two seconds before takeoff", Mathf.Abs(outro.LiftOffStartsAt - 2) < .02f);
                     mission.SendMessage("Replay"); outro.takeoffAudioSeconds = 55;
                     Check("Late-boarding replay restores helicopter and lighting", !outro.Running && Vector3.Distance(outro.helicopter.position, parked) < .01f && RenderSettings.skybox == priorSky);
                     File.AppendAllText(ReportPath, "PASS COMPLETE\n"); Stop(); return;
@@ -189,7 +191,8 @@ public static class HelicopterOutroValidation
                 }
                 if (!outro.Finished) return;
                 Check("Departure uses one continuous camera shot", shots != 0 && outro.ShotIndex == 0);
-                if (shots != 7) File.AppendAllText(ReportPath, "INFO Editor stalls skipped a preview interval; camera position and FOV were checked on every sampled exterior frame.\n");
+                Check("Ground camera slides across the road", Vector3.Distance(mission.playerCamera.transform.position, outro.exteriorCameraAnchor.position) >= outro.exteriorTravelOffset.magnitude * .95f);
+                if (shots != 7) File.AppendAllText(ReportPath, "INFO Editor stalls skipped a preview interval; dolly position and centered framing were checked on every sampled exterior frame.\n");
                 Check("Exterior shots never begin before chatter plus three seconds", outro.FirstExteriorTime >= outro.ExteriorStartsAt);
                 Check("Mission completes only after outro and fade", mission.State == IntelTheftMission.Phase.Complete && !outro.Running);
                 Check("Helicopter leaves beyond the main gate", Vector3.Dot(outro.helicopter.position - outro.gatePosition, (outro.gatePosition - parked).normalized) > 50);
@@ -229,11 +232,17 @@ public static class HelicopterOutroValidation
     }
     static void CheckOnceForExterior()
     {
-        if (outro.ShotIndex != 0 || Vector3.Distance(mission.playerCamera.transform.position, outro.exteriorCameraAnchor.position) > .02f ||
+        float travel = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(outro.ExteriorStartsAt, outro.EndsAt, outro.PresentedTime));
+        Vector3 expected = outro.exteriorCameraAnchor.position + outro.exteriorTravelOffset * travel;
+        Vector3 centered = mission.playerCamera.WorldToViewportPoint(outro.CinematicFocus);
+        if (outro.ShotIndex != 0 || Vector3.Distance(mission.playerCamera.transform.position, expected) > .02f ||
             !Mathf.Approximately(mission.playerCamera.fieldOfView, outro.exteriorFieldOfView))
-            Check("Exterior camera remains fixed in position and focal length throughout departure", false);
+            Check("Exterior camera follows one smooth dolly path without zooming", false);
+        if (centered.z <= 0 || Mathf.Abs(centered.x - .5f) > .01f || Mathf.Abs(centered.y - .5f) > .01f)
+            Check("Helicopter stays centered throughout the moving shot", false);
         if (shots != 0) return;
-        Check("Single camera stays beside the main building", outro.ShotIndex == 0 && Vector3.Distance(mission.playerCamera.transform.position, outro.exteriorCameraAnchor.position) < .02f);
+        Check("One moving ground shot starts beside the main building", outro.ShotIndex == 0 && outro.exteriorTravelOffset.magnitude >= 10);
+        Check("Helicopter is centered while the camera crosses the road", Mathf.Abs(centered.x - .5f) < .01f && Mathf.Abs(centered.y - .5f) < .01f);
         Check("Wide framing stays fixed without zooming onto the helicopter", Mathf.Approximately(mission.playerCamera.fieldOfView, outro.exteriorFieldOfView) && outro.exteriorFieldOfView >= 65);
     }
     static void Stop()

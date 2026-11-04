@@ -11,10 +11,11 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     public AudioClip startupClip, chatterClip;
     public Vector3 gatePosition = new Vector3(4, 0, -90);
     public Transform exteriorCameraAnchor;
-    public Vector3 exteriorLookStart, exteriorLookEnd;
+    public Vector3 exteriorTravelOffset = new Vector3(14, 0, 0);
     [Range(35, 90)] public float exteriorFieldOfView = 70;
     public OutroSunsetTransition sunset;
-    [Min(1)] public float spoolSeconds = 12;
+    [Min(.25f)] public float spoolSeconds = 2;
+    [Min(.25f)] public float boardingLeadSeconds = 2;
     [Min(1)] public float takeoffAudioSeconds = 55;
     [Min(0)] public float afterChatterSeconds = 3;
     public bool Running { get; private set; }
@@ -25,9 +26,10 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     public float LiftOffStartsAt { get; private set; }
     public float EndsAt { get; private set; }
     public float ExteriorStartsAt => ChatterStartsAt + (chatterClip ? chatterClip.length : 0) + afterChatterSeconds;
-    public float RecordingTime => !starting ? 0 : HoldingForPilot ? takeoffAudioSeconds - 3 :
+    public float RecordingTime => !starting ? 0 : HoldingForPilot ? takeoffAudioSeconds - boardingLeadSeconds :
         Mathf.Clamp((float)(AudioSettings.dspTime - startupAt), 0, startupClip.length);
-    public bool HoldingForPilot => starting && !Running && AudioSettings.dspTime >= startupAt + takeoffAudioSeconds - 3;
+    public bool HoldingForPilot => starting && !Running && AudioSettings.dspTime >= startupAt + takeoffAudioSeconds - boardingLeadSeconds;
+    public Vector3 CinematicFocus => helicopter.position + helicopter.rotation * new Vector3(0, 2.2f, -2.5f);
     public bool RotorsStarting => starting;
     public float PresentedTime { get; private set; }
     public bool LiftedInCockpit { get; private set; }
@@ -37,8 +39,8 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
 
     AudioSource startup, chatter, idle;
     AudioClip idleClip;
-    bool idleScheduled;
-    double startupAt, boardedAt;
+    bool idleScheduled, handoffActive;
+    double startupAt, boardedAt, rotorsStartedAt;
     bool initialized, starting;
     Vector3 parkedPosition, cameraLocalPosition;
     Quaternion parkedRotation, mainRotation, tailRotation, cameraLocalRotation;
@@ -85,10 +87,14 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         Initialize();
         if (!initialized) return;
         if (starting || Finished) return;
-        starting = true; startupAt = AudioSettings.dspTime + .05;
-        startup.volume = .85f; startup.PlayScheduled(startupAt);
+        starting = true; rotorsStartedAt = AudioSettings.dspTime;
+        // Use the running-engine part while the player returns, skipping the long windup.
+        float runupOffset = Mathf.Max(0, takeoffAudioSeconds - boardingLeadSeconds - 8);
+        double startsAt = AudioSettings.dspTime + .05;
+        startupAt = startsAt - runupOffset;
+        startup.time = runupOffset; startup.volume = .85f; startup.PlayScheduled(startsAt);
         // Stop before the takeoff cue if the player needs longer to reach the aircraft.
-        startup.SetScheduledEndTime(startupAt + takeoffAudioSeconds - 3);
+        startup.SetScheduledEndTime(startupAt + takeoffAudioSeconds - boardingLeadSeconds);
         ScheduleIdle();
     }
     void ScheduleIdle()
@@ -97,7 +103,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         const float seconds = 5;
         int frames = Mathf.RoundToInt(seconds * startupClip.frequency);
         var samples = new float[frames * startupClip.channels];
-        int offset = Mathf.RoundToInt((takeoffAudioSeconds - 3 - seconds) * startupClip.frequency);
+        int offset = Mathf.RoundToInt((takeoffAudioSeconds - boardingLeadSeconds - seconds) * startupClip.frequency);
         if (!startupClip.GetData(samples, Mathf.Max(0, offset))) return;
         // A short edge fade keeps the repeated idle section from clicking.
         int edge = Mathf.RoundToInt(.012f * startupClip.frequency);
@@ -107,8 +113,8 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
             for (int channel = 0; channel < startupClip.channels; channel++) samples[i * startupClip.channels + channel] *= fade;
         }
         idleClip = AudioClip.Create("Helicopter pre-takeoff idle", frames, startupClip.channels, startupClip.frequency, false);
-        idleClip.SetData(samples, 0); idle.clip = idleClip; idle.volume = .85f;
-        idle.PlayScheduled(Mathf.Max((float)AudioSettings.dspTime + .02f, (float)(startupAt + takeoffAudioSeconds - 3)));
+        idleClip.SetData(samples, 0); idle.clip = idleClip; idle.volume = .85f; idle.loop = true;
+        idle.PlayScheduled(System.Math.Max(AudioSettings.dspTime + .02, startupAt + takeoffAudioSeconds - boardingLeadSeconds));
         idleScheduled = true;
     }
     public bool Begin()
@@ -117,15 +123,20 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         if (!initialized || Running || Finished || !pilotEyes || !exteriorCameraAnchor || !startupClip || !chatterClip) return false;
         PrepareExtraction();
         bool wasHolding = HoldingForPilot;
+        float previousCursor = RecordingTime;
         Running = true; boardedAt = AudioSettings.dspTime;
-        idle.Stop();
-        if (wasHolding)
+        // Fade the old engine audio under the edited takeoff lead-in, without changing pitch.
+        if (!wasHolding)
         {
-            startup.Stop(); startup.time = takeoffAudioSeconds - 3;
-            double resumedAt = boardedAt + .05;
-            startupAt = resumedAt - (takeoffAudioSeconds - 3);
-            startup.PlayScheduled(resumedAt);
+            idle.Stop(); idle.clip = startupClip; idle.loop = false;
+            idle.time = previousCursor; idle.Play();
         }
+        idle.spatialBlend = 0; idle.volume = .68f; handoffActive = true;
+        startup.Stop();
+        double resumedAt = boardedAt + .05;
+        startupAt = boardedAt + boardingLeadSeconds - takeoffAudioSeconds;
+        startup.time = takeoffAudioSeconds - boardingLeadSeconds + .05f;
+        startup.volume = 0; startup.PlayScheduled(resumedAt);
         startup.SetScheduledEndTime(startupAt + startupClip.length);
         startup.spatialBlend = 0;
         LiftOffStartsAt = Mathf.Max(0, (float)(startupAt + takeoffAudioSeconds - boardedAt));
@@ -163,7 +174,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         if (!initialized) return;
         if (!starting || Finished) return;
         if (!idleScheduled && !Running) ScheduleIdle();
-        float spool = Mathf.Clamp01((float)(AudioSettings.dspTime - startupAt) / spoolSeconds);
+        float spool = Mathf.Clamp01((float)(AudioSettings.dspTime - rotorsStartedAt) / spoolSeconds);
         RotorSpeed = Mathf.SmoothStep(0, 1, spool);
         if (mainRotor) mainRotor.Rotate(Vector3.up, RotorSpeed * 1800 * Time.deltaTime, Space.World);
         // The setup creates a pivot aligned with the model's lateral rotor shaft.
@@ -171,7 +182,13 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         SetBlades(RotorSpeed > .7f);
         // Keep the original recording, at its original pitch, through the departure.
         float fadeOut = Running ? 1 - Mathf.Clamp01((Elapsed - EndsAt + 2) / 2) : 1;
-        startup.volume = (Running ? chatter.isPlaying ? .42f : .68f : .85f) * fadeOut;
+        float blend = Running ? Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.05f, .25f, Elapsed)) : 1;
+        startup.volume = (Running ? chatter.isPlaying ? .42f : .68f : .85f) * fadeOut * blend;
+        if (handoffActive)
+        {
+            idle.volume = .68f * (1 - blend);
+            if (blend >= 1) { idle.Stop(); handoffActive = false; }
+        }
         if (Running && Keyboard.current != null && Elapsed > 1 && Keyboard.current.escapeKey.wasPressedThisFrame) Finish();
     }
     void SetBlades(bool flying)
@@ -218,10 +235,9 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         else
         {
             ShotIndex = 0;
-            view.transform.position = exteriorCameraAnchor.position;
-            float pan = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(ExteriorStartsAt, EndsAt, elapsed));
-            Vector3 look = Vector3.Lerp(exteriorLookStart, exteriorLookEnd, pan);
-            view.transform.rotation = Quaternion.LookRotation(look - view.transform.position);
+            float travelAcrossRoad = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(ExteriorStartsAt, EndsAt, elapsed));
+            view.transform.position = exteriorCameraAnchor.position + exteriorTravelOffset * travelAcrossRoad;
+            view.transform.rotation = Quaternion.LookRotation(CinematicFocus - view.transform.position);
             view.fieldOfView = exteriorFieldOfView;
         }
     }
@@ -240,8 +256,9 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         Running = Finished = ExteriorView = starting = false; ShotIndex = -1; RotorSpeed = 0;
         PresentedTime = 0; LiftedInCockpit = false; FirstExteriorTime = -1;
         if (startup) { startup.Stop(); startup.spatialBlend = 1; }
-        if (chatter) chatter.Stop(); if (idle) idle.Stop();
+        if (chatter) chatter.Stop(); if (idle) { idle.Stop(); idle.spatialBlend = 1; }
         if (idleClip) Destroy(idleClip); idleClip = null; idleScheduled = false;
+        handoffActive = false;
         if (sunset) sunset.ResetLighting();
         if (helicopter) helicopter.SetPositionAndRotation(parkedPosition, parkedRotation);
         if (mainRotor) mainRotor.localRotation = mainRotation;

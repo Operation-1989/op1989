@@ -47433,7 +47433,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 834280408}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.06704433, y: 0.87725276, z: 0.12852384, w: 0.45761806}
+  m_LocalRotation: {x: -0.09389227, y: 0.66792554, z: 0.08552031, w: 0.73331165}
   m_LocalPosition: {x: -8, y: 2.3, z: 10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -70105,11 +70105,11 @@ MonoBehaviour:
   chatterClip: {fileID: 8300000, guid: daaea39dc6ac6834c937033d369fd889, type: 3}
   gatePosition: {x: 3.9, y: 0, z: -90.46019}
   exteriorCameraAnchor: {fileID: 834280409}
-  exteriorLookStart: {x: 35, y: 18, z: -20}
-  exteriorLookEnd: {x: 0, y: 20, z: -110}
+  exteriorTravelOffset: {x: 14, y: 0, z: 0}
   exteriorFieldOfView: 70
   sunset: {fileID: 1187813931}
-  spoolSeconds: 12
+  spoolSeconds: 2
+  boardingLeadSeconds: 2
   takeoffAudioSeconds: 55
   afterChatterSeconds: 3
 --- !u!114 &1187813931
