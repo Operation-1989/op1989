@@ -12,7 +12,8 @@ public static class MissionHudStyle
     {
         var style = new GUIStyle(GUI.skin.label) { font = font, fontSize = size, wordWrap = true,
             padding = new RectOffset(), margin = new RectOffset() };
-        style.normal.textColor = color;
+        foreach (var state in new[] { style.normal, style.hover, style.active, style.focused,
+            style.onNormal, style.onHover, style.onActive, style.onFocused }) state.textColor = color;
         return style;
     }
 

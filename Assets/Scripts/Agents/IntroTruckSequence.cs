@@ -31,6 +31,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
     [TextArea] public string missionBriefing = "A secret is stored on a computer in the base's main building. Your mission is to steal it.";
     [TextArea] public string entryBriefing = "First, get inside. Secretly follow the supply truck through the gate. Stay out of sight and use its arrival as your opening.";
     public IntroTruckAudio truckAudio;
+    public IntelTheftMission intelMission;
     [Header("Gate timing")]
     [Min(0)] public float gateOpenDelay = 1;
     [Tooltip("Maximum entry window after the camera handoff. Normally the truck's first inside right turn closes the gate sooner.")]
@@ -227,6 +228,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
     public void RespawnInsideGate()
     {
         if (!Initialize()) return;
+        if (intelMission) intelMission.ResetForCheckpoint();
         SetInput(false);
         var controller = player.GetComponent<CharacterController>();
         bool wasEnabled = controller && controller.enabled;

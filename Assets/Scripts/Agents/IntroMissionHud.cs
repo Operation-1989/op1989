@@ -133,7 +133,13 @@ public sealed class IntroMissionHud
                 sequence.Entered ? "Reach the main building" : "Follow the supply truck";
             string objective = sequence.MissedEntry ? "The gate has closed. Press R to replay the approach." : sequence.Entered
                 ? "Find the computer in the main building. Stay out of sight." : "Slip through the gate behind the truck. Keep out of sight.";
+            if (sequence.Entered && sequence.intelMission && !overview)
+            {
+                title = sequence.intelMission.ObjectiveTitle;
+                objective = sequence.intelMission.ObjectiveText;
+            }
             string description = Expanded ? sequence.missionBriefing + "\n\n" + objective : overview ? sequence.missionBriefing : objective;
+            if (sequence.Entered && sequence.intelMission && !overview) description = objective;
             GUI.Label(new Rect(card.x + 20, card.y + 18, 355, 18), overview ? sequence.missionTitle : status, eyebrow);
             GUI.Label(new Rect(card.x + 20, card.y + 43, 393, 31), title, heading);
             GUI.Label(new Rect(card.x + 20, card.y + 87, 393, card.height - 125), description, body);

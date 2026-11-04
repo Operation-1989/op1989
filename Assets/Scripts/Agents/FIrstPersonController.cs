@@ -19,6 +19,7 @@ public class FirstPersonController : MonoBehaviour
     public Transform playerCamera;
     public float mouseSensitivity = 0.15f;
     public float maxLookAngle = 80f;
+    public float LookSensitivityMultiplier { get; set; } = 1f;
 
     private CharacterController controller;
     private float verticalRotation;
@@ -75,7 +76,7 @@ public class FirstPersonController : MonoBehaviour
             playerCamera == null)
             return;
 
-        Vector2 mouseDelta = Mouse.current.delta.ReadValue();
+        Vector2 mouseDelta = Mouse.current.delta.ReadValue() * LookSensitivityMultiplier;
 
         transform.Rotate(Vector3.up * mouseDelta.x * mouseSensitivity);
 

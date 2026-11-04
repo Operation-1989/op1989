@@ -30,6 +30,7 @@ public static class DronePatrolSetup
             else if (command == "refine") Refine();
             else if (command == "tune-visibility") TuneVisibility();
             else if (command == "confine-route") ConfineRoute();
+            else if (command == "validate-damage") ValidateDamage();
         }
         catch (Exception e) { File.WriteAllText(Work + "/error.txt", e.ToString()); Debug.LogException(e); }
     }
@@ -434,6 +435,204 @@ public static class DronePatrolSetup
         patrol.transform.SetPositionAndRotation(position, rotation);
         File.WriteAllText(Work + "/validation.txt", report.ToString());
         Debug.Log(report.ToString());
+    }
+
+    const string DamageWork = "Temp/DroneDamage";
+    static DroneMapPatrol damagePatrol;
+    static RifleWeapon damageRifle;
+    static GameObject damageArena;
+    static Vector3 damageStart;
+    static double damageStartTime;
+    static float damageGameStart;
+    static float damageBurnStarted;
+    static int damageStage;
+    static bool damagePriorBackground;
+
+    [MenuItem("Operation 1989/Drone/Validate Rifle Damage and Crash")]
+    public static void ValidateDamage()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode)
+            throw new InvalidOperationException("Run the drone damage validation from Edit mode.");
+        if (!Object.FindAnyObjectByType<DroneMapPatrol>())
+            throw new InvalidOperationException("Open the drone patrol scene first.");
+        Directory.CreateDirectory(DamageWork);
+        File.WriteAllText(DamageWork + "/validation.txt", "Drone rifle damage and crash Play Mode validation\n");
+        SessionState.SetBool("DroneDamageValidation", true);
+        EditorApplication.playModeStateChanged -= DamageValidationState;
+        EditorApplication.playModeStateChanged += DamageValidationState;
+        EditorApplication.isPlaying = true;
+    }
+
+    [InitializeOnLoadMethod]
+    static void ResumeDamageValidation()
+    {
+        if (SessionState.GetBool("DroneDamageValidation", false))
+            EditorApplication.playModeStateChanged += DamageValidationState;
+    }
+
+    static void DamageValidationState(PlayModeStateChange state)
+    {
+        if (state != PlayModeStateChange.EnteredPlayMode) return;
+        EditorApplication.playModeStateChanged -= DamageValidationState;
+        damageStage = 0;
+        damagePriorBackground = Application.runInBackground;
+        Application.runInBackground = true;
+        damageStartTime = EditorApplication.timeSinceStartup;
+        EditorApplication.update -= DamageValidationTick;
+        EditorApplication.update += DamageValidationTick;
+    }
+
+    static void DamageCheck(string label, bool pass)
+    {
+        File.AppendAllText(DamageWork + "/validation.txt", (pass ? "PASS " : "FAIL ") + label + "\n");
+    }
+
+    static void DamageValidationTick()
+    {
+        if (!EditorApplication.isPlaying)
+        {
+            SessionState.SetBool("DroneDamageValidation", false);
+            EditorApplication.update -= DamageValidationTick;
+            return;
+        }
+        EditorApplication.QueuePlayerLoopUpdate();
+        try
+        {
+            if (EditorApplication.timeSinceStartup - damageStartTime > 60)
+                throw new TimeoutException("Drone crash validation did not finish in 60 seconds.");
+            if (damageStage == 0)
+            {
+                damagePatrol = Object.FindAnyObjectByType<DroneMapPatrol>();
+                if (!damagePatrol) throw new InvalidOperationException("Drone missing in Play Mode.");
+                var damage = damagePatrol.GetComponent<DroneDamage>();
+                if (!damage || damage.Current <= 0) return; // Wait for runtime initialization.
+                DamageCheck("Existing scene drone automatically receives damage handling", damage != null);
+                DamageCheck("Wreck fire defaults to one minute", Mathf.Approximately(damage.wreckFireSeconds, 60));
+                damage.wreckFireSeconds = 3; // Exercise ignition and extinction without a minute-long test.
+                damageArena = new GameObject("Temporary drone damage validation arena");
+                damageArena.transform.position = new Vector3(10000, 0, 10000);
+                var ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                ground.transform.SetParent(damageArena.transform, false);
+                ground.transform.localPosition = Vector3.down * 0.5f;
+                ground.transform.localScale = new Vector3(100, 1, 100);
+                var launch = new GameObject("Test launch").transform;
+                launch.SetParent(damageArena.transform, false);
+                launch.localPosition = Vector3.up * 8;
+                damagePatrol.launchPoint = launch;
+                damagePatrol.launchDelay = 10000;
+                damagePatrol.ResetFlight();
+                Physics.SyncTransforms();
+                var collider = damagePatrol.GetComponentsInChildren<Collider>()
+                    .FirstOrDefault(c => c.enabled && !c.isTrigger);
+                DamageCheck("Drone has a solid rifle hitbox", collider && !collider.isTrigger);
+                if (!collider) throw new InvalidOperationException("No drone hitbox.");
+                damageStart = damagePatrol.transform.position;
+                var rifleObject = new GameObject("Test rifle");
+                rifleObject.transform.SetParent(damageArena.transform, false);
+                damageRifle = rifleObject.AddComponent<RifleWeapon>();
+                damageRifle.playerWeapon = true;
+                damageRifle.range = 30;
+                Vector3 center = collider.bounds.center;
+                Vector3 origin = center - Vector3.forward * 10;
+                var cover = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                cover.transform.SetParent(damageArena.transform, true);
+                cover.transform.position = origin + Vector3.forward * 5;
+                cover.transform.localScale = new Vector3(4, 4, 0.5f);
+                Physics.SyncTransforms();
+                damageRifle.Shoot(origin, Vector3.forward);
+                DamageCheck("Cover blocks damage to the drone", Mathf.Approximately(damage.Current, 250));
+                Object.DestroyImmediate(cover);
+                Physics.SyncTransforms();
+                damage.TakeDamage(-5, center);
+                DamageCheck("Invalid damage is ignored", Mathf.Approximately(damage.Current, 250));
+                for (int i = 0; i < 9; i++) damageRifle.Shoot(origin, Vector3.forward);
+                DamageCheck("Nine actual rifle hits leave 25 health and patrol enabled",
+                    Mathf.Approximately(damage.Current, 25) && !damage.Destroyed && damagePatrol.enabled);
+                damageRifle.Shoot(origin, Vector3.forward);
+                DamageCheck("Tenth rifle hit destroys the drone and stops its patrol",
+                    damage.Destroyed && damage.Current == 0 && !damagePatrol.enabled);
+                var rigidbody = damagePatrol.GetComponent<Rigidbody>();
+                DamageCheck("Wreck uses gravity and continuous collision detection", rigidbody && !rigidbody.isKinematic &&
+                    rigidbody.useGravity && rigidbody.collisionDetectionMode == CollisionDetectionMode.ContinuousDynamic);
+                DamageCheck("Motor audio stops", damagePatrol.GetComponentsInChildren<AudioSource>().All(s => !s.isPlaying));
+                DamageCheck("Blast and spark particles are emitted", damage.GetComponentsInChildren<ParticleSystem>().Any(p => p.particleCount > 0));
+                damage.TakeDamage(25, center);
+                DamageCheck("Further hits leave the wreck destroyed", damage.Current == 0 && damage.Destroyed);
+                Capture(damagePatrol.transform.position + new Vector3(3, 2, -4),
+                    damagePatrol.transform.position, "drone-destruction-blast");
+                damageGameStart = Time.time;
+                damageStartTime = EditorApplication.timeSinceStartup;
+                damageStage = 1;
+                return;
+            }
+            if (damageStage == 1 && Time.time - damageGameStart > 0.6f)
+            {
+                DamageCheck("Drone falls below its flight position", damagePatrol.transform.position.y < damageStart.y - 0.2f);
+                File.AppendAllText(DamageWork + "/validation.txt",
+                    $"Fall position: {damageStart} -> {damagePatrol.transform.position}\n");
+                Capture(damagePatrol.transform.position + new Vector3(3, 2, -4),
+                    damagePatrol.transform.position, "drone-falling-sparks");
+                damageStage = 2;
+            }
+            if (damageStage == 2 && damagePatrol.GetComponent<DroneDamage>().HasImpacted)
+            {
+                var damage = damagePatrol.GetComponent<DroneDamage>();
+                DamageCheck("Wreck collides with the ground", damage.HasImpacted);
+                DamageCheck("Wreck remains in the scene", damagePatrol && damage.Destroyed && !damagePatrol.enabled);
+                DamageCheck("Spark emission finishes", damage.GetComponentsInChildren<ParticleSystem>()
+                    .Where(p => p.name == "Falling drone sparks").All(p => !p.isEmitting));
+                var pulses = damage.GetComponentsInChildren<AircraftLightPulse>(true);
+                DamageCheck("Blinking navigation lights lose power on impact", pulses.Length > 0 &&
+                    pulses.All(p => !p.enabled && (!p.source || !p.source.enabled)));
+                bool darkLenses = true;
+                foreach (var pulse in pulses)
+                {
+                    if (!pulse.lens) continue;
+                    var block = new MaterialPropertyBlock();
+                    pulse.lens.GetPropertyBlock(block);
+                    darkLenses &= block.GetColor("_EmissionColor") == Color.black;
+                }
+                DamageCheck("Navigation lenses stop glowing", darkLenses);
+                DamageCheck("Fire starts on ground impact", damage.IsBurning &&
+                    damage.GetComponentsInChildren<ParticleSystem>().Any(p => p.name == "Drone wreck fire" && p.isEmitting));
+                damageBurnStarted = Time.time;
+                damageStage = 3;
+            }
+            if (damageStage == 3 && Time.time - damageBurnStarted > 0.5f)
+            {
+                DamageCheck("Fire persists after impact", damagePatrol.GetComponent<DroneDamage>().IsBurning);
+                DamageCheck("Flame particles simulate above the wreck", damagePatrol.GetComponentsInChildren<ParticleSystem>()
+                    .Any(p => p.name == "Drone wreck fire" && p.particleCount > 0));
+                Capture(damagePatrol.transform.position + new Vector3(3, 2, -4),
+                    damagePatrol.transform.position, "drone-wreck-fire");
+                damageStage = 4;
+            }
+            if (damageStage == 4 && Time.time - damageBurnStarted > 5f)
+            {
+                var damage = damagePatrol.GetComponent<DroneDamage>();
+                DamageCheck("Fire extinguishes after its configured duration", !damage.IsBurning &&
+                    damage.GetComponentsInChildren<ParticleSystem>().Where(p => p.name == "Drone wreck fire").All(p => !p.isEmitting));
+                DamageCheck("Fire illumination switches off", damage.GetComponentsInChildren<Light>()
+                    .Where(l => l.name == "Drone wreck fire light").All(l => !l.enabled));
+                DamageCheck("Navigation lights stay off after fire ends", damage.GetComponentsInChildren<AircraftLightPulse>(true)
+                    .All(p => !p.enabled && (!p.source || !p.source.enabled)));
+                EndDamageValidation();
+            }
+        }
+        catch (Exception error)
+        {
+            File.AppendAllText(DamageWork + "/validation.txt", "FAIL " + error + "\n");
+            EndDamageValidation();
+        }
+    }
+
+    static void EndDamageValidation()
+    {
+        SessionState.SetBool("DroneDamageValidation", false);
+        EditorApplication.update -= DamageValidationTick;
+        if (damageArena) Object.DestroyImmediate(damageArena);
+        Application.runInBackground = damagePriorBackground;
+        EditorApplication.isPlaying = false;
     }
 
     static double smokeStart;
