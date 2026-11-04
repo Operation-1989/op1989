@@ -8,6 +8,7 @@ public sealed class CombatHealth : MonoBehaviour
     [Min(.1f)] public float respawnDelay = 10;
     public float Current {get;private set;}
     public bool Dead=>Current<=0;
+    public bool CinematicProtection { get; set; }
     float hurtUntil;
     float respawnAt;
     readonly CombatHud hud = new CombatHud();
@@ -16,7 +17,7 @@ public sealed class CombatHealth : MonoBehaviour
     void Awake(){Current=maximumHealth;spawn=transform.position;rotation=transform.rotation;}
     public void TakeDamage(float amount)
     {
-        if(Dead || amount<=0)return;
+        if(Dead || CinematicProtection || amount<=0)return;
         Current=Mathf.Max(0,Current-amount);hurtUntil=Time.time+.18f;
         var guard=GetComponent<BarricadePatrolSoldier>();if(guard)guard.Alert();
         if(!Dead)return;

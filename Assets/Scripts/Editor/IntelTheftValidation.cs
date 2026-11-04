@@ -216,7 +216,7 @@ public static class IntelTheftValidation
                 Aim(); Check("A new USB transfer can be collected", mission.InteractWithTerminal());
                 Check("Extraction cannot complete outside the boarding zone", !mission.TryExtract());
                 Move(mission.extraction.transform.position + Vector3.up);
-                Check("Helicopter extraction succeeds with stolen intel", mission.TryExtract() && mission.State == IntelTheftMission.Phase.Complete);
+                Check("Helicopter extraction starts the outro with stolen intel", mission.TryExtract() && mission.State == IntelTheftMission.Phase.Extracting && mission.outro.Running);
                 Check("Victory stops alarm and player firing/movement", !mission.alarm.Active && !mission.player.GetComponent<FirstPersonController>().enabled);
                 Check("Repeated extraction does not restart completion", !mission.TryExtract());
                 mission.intro.RespawnInsideGate();

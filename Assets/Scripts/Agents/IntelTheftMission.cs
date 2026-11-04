@@ -4,18 +4,19 @@ using UnityEngine.InputSystem;
 /// <summary>USB theft, alarm, and helicopter extraction for the main-building computer.</summary>
 public sealed class IntelTheftMission : MonoBehaviour
 {
-    public enum Phase { FindComputer, Downloading, ReadyToRemove, Escape, Complete }
+    public enum Phase { FindComputer, Downloading, ReadyToRemove, Escape, Complete, Extracting }
     public Transform player;
     public Camera playerCamera;
     public IntelTerminal terminal;
     public HelicopterExtractionZone extraction;
     public BaseTheftAlarm alarm;
     public IntroTruckSequence intro;
+    public HelicopterOutroSequence outro;
     [Min(0.1f)] public float downloadSeconds = 15f;
     [Min(0.5f)] public float interactionDistance = 2.8f;
     public Phase State { get; private set; }
     public float DownloadProgress => Mathf.Clamp01(downloadElapsed / Mathf.Max(0.1f, downloadSeconds));
-    public bool HasIntel => State == Phase.Escape || State == Phase.Complete;
+    public bool HasIntel => State == Phase.Escape || State == Phase.Extracting || State == Phase.Complete;
     public bool CanControl => player && movement && movement.isActiveAndEnabled && (!health || !health.Dead) &&
         Cursor.lockState == CursorLockMode.Locked && Time.timeScale > 0 && (!intro || !intro.MissionCapturesPointer);
     int terminalInputFrame = -1;
@@ -120,6 +121,7 @@ public sealed class IntelTheftMission : MonoBehaviour
         if (State != Phase.ReadyToRemove) return false;
         terminalInputFrame = Time.frameCount;
         State = Phase.Escape;
+        if (outro) outro.PrepareExtraction();
         terminal.SetUsbInserted(false);
         terminal.RefreshDisplay();
         if (alarm) alarm.SetActive(true);
@@ -129,16 +131,22 @@ public sealed class IntelTheftMission : MonoBehaviour
     public bool TryExtract()
     {
         if (State != Phase.Escape || !CanControl || !extraction || !extraction.Contains(player.position)) return false;
-        State = Phase.Complete;
+        if (!outro || !outro.Begin()) return false;
+        State = Phase.Extracting;
         if (alarm) alarm.SetActive(false);
         extraction.SetMarked(false);
-        movement.enabled = false;
+        return true;
+    }
+    public void CompleteExtraction()
+    {
+        if (State != Phase.Extracting) return;
+        State = Phase.Complete;
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-        return true;
     }
     public void ResetForCheckpoint()
     {
+        if (outro) outro.ResetSequence();
         State = Phase.FindComputer;
         downloadElapsed = 0;
         terminalInputFrame = -1;
@@ -167,7 +175,10 @@ public sealed class IntelTheftMission : MonoBehaviour
     }
     void OnGUI()
     {
+        if (State == Phase.Extracting) return;
         if (!player || (health && health.Dead) || (intro && (!intro.HandedOff || !intro.Entered))) return;
+        int previousDepth = GUI.depth;
+        if (State == Phase.Complete) GUI.depth = -600;
         Styles();
         var previous = GUI.matrix;
         var previousColor = GUI.color;
@@ -202,6 +213,7 @@ public sealed class IntelTheftMission : MonoBehaviour
         GUI.color = previousColor;
         GUI.contentColor = previousContentColor;
         GUI.enabled = previousEnabled;
+        GUI.depth = previousDepth;
     }
     void UpdateTerminalPrompt()
     {
