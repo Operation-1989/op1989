@@ -173,7 +173,8 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void Update()
     {
-        missionHud.Tick(this);
+        if (!intelMission || (intelMission.State != IntelTheftMission.Phase.Extracting && intelMission.State != IntelTheftMission.Phase.Complete))
+            missionHud.Tick(this);
         elapsed += Time.deltaTime;
         if (!handedOff && Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
             SkipIntro();
@@ -374,6 +375,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void OnGUI()
     {
+        if (intelMission && (intelMission.State == IntelTheftMission.Phase.Extracting || intelMission.State == IntelTheftMission.Phase.Complete)) return;
         var health = player ? player.GetComponent<CombatHealth>() : null;
         if (!health || !health.Dead) missionHud.Draw(this);
     }

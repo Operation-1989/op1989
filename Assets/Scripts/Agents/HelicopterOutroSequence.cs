@@ -1,0 +1,289 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+/// <summary>Automatic pilot boarding, recorded startup, and a gate-bound cinematic extraction.</summary>
+public sealed class HelicopterOutroSequence : MonoBehaviour
+{
+    public IntelTheftMission mission;
+    public Transform helicopter, pilotEyes, mainRotor, tailRotor;
+    public Renderer parkedBlades, flyingBlades, parkedTail, flyingTail;
+    public AudioClip startupClip, chatterClip;
+    public Vector3 gatePosition = new Vector3(4, 0, -90);
+    public Transform exteriorCameraAnchor;
+    public Vector3 exteriorLookStart, exteriorLookEnd;
+    [Range(35, 90)] public float exteriorFieldOfView = 70;
+    public OutroSunsetTransition sunset;
+    [Min(1)] public float spoolSeconds = 12;
+    [Min(1)] public float takeoffAudioSeconds = 55;
+    [Min(0)] public float afterChatterSeconds = 3;
+    public bool Running { get; private set; }
+    public bool Finished { get; private set; }
+    public bool ExteriorView { get; private set; }
+    public float Elapsed => Running ? (float)(AudioSettings.dspTime - boardedAt) : 0;
+    public float ChatterStartsAt { get; private set; }
+    public float LiftOffStartsAt { get; private set; }
+    public float EndsAt { get; private set; }
+    public float ExteriorStartsAt => ChatterStartsAt + (chatterClip ? chatterClip.length : 0) + afterChatterSeconds;
+    public float RecordingTime => !starting ? 0 : HoldingForPilot ? takeoffAudioSeconds - 3 :
+        Mathf.Clamp((float)(AudioSettings.dspTime - startupAt), 0, startupClip.length);
+    public bool HoldingForPilot => starting && !Running && AudioSettings.dspTime >= startupAt + takeoffAudioSeconds - 3;
+    public bool RotorsStarting => starting;
+    public float PresentedTime { get; private set; }
+    public bool LiftedInCockpit { get; private set; }
+    public float FirstExteriorTime { get; private set; } = -1;
+    public float RotorSpeed { get; private set; }
+    public int ShotIndex { get; private set; } = -1;
+
+    AudioSource startup, chatter, idle;
+    AudioClip idleClip;
+    bool idleScheduled;
+    double startupAt, boardedAt;
+    bool initialized, starting;
+    Vector3 parkedPosition, cameraLocalPosition;
+    Quaternion parkedRotation, mainRotation, tailRotation, cameraLocalRotation;
+    float cameraFov, cameraNear;
+    bool wasMovement, wasController, wasProtected;
+    FirstPersonController movement;
+    CharacterController controller;
+    CombatHealth health;
+    Camera view;
+    readonly List<Behaviour> suspended = new List<Behaviour>();
+    readonly List<Renderer> hidden = new List<Renderer>();
+    readonly List<Collider> disabledColliders = new List<Collider>();
+
+    void Awake() => Initialize();
+    void Initialize()
+    {
+        if (initialized || !helicopter || !mission || !mission.playerCamera) return;
+        initialized = true;
+        parkedPosition = helicopter.position; parkedRotation = helicopter.rotation;
+        if (mainRotor) mainRotation = mainRotor.localRotation;
+        if (tailRotor) tailRotation = tailRotor.localRotation;
+        SetBlades(false);
+        view = mission.playerCamera;
+        movement = mission.player.GetComponent<FirstPersonController>();
+        controller = mission.player.GetComponent<CharacterController>();
+        health = mission.player.GetComponent<CombatHealth>();
+        startup = MakeSource("Helicopter startup", startupClip, false);
+        chatter = MakeSource("Helicopter radio chatter", chatterClip, false);
+        idle = MakeSource("Helicopter waiting for pilot", null, true);
+        foreach (var clip in new[] { startupClip, chatterClip }) if (clip) clip.LoadAudioData();
+        VehicleAudioFalloff.Configure(startup, 10, 140, 200);
+        VehicleAudioFalloff.Configure(idle, 10, 140, 200);
+    }
+    AudioSource MakeSource(string label, AudioClip clip, bool loop)
+    {
+        var go = new GameObject(label); go.transform.SetParent(helicopter, false);
+        var source = go.AddComponent<AudioSource>(); source.playOnAwake = false;
+        source.clip = clip; source.loop = loop; source.dopplerLevel = 0;
+        source.spatialBlend = 0; // These are full recordings; preserve their stereo image.
+        return source;
+    }
+    public void PrepareExtraction()
+    {
+        Initialize();
+        if (!initialized) return;
+        if (starting || Finished) return;
+        starting = true; startupAt = AudioSettings.dspTime + .05;
+        startup.volume = .85f; startup.PlayScheduled(startupAt);
+        // Stop before the takeoff cue if the player needs longer to reach the aircraft.
+        startup.SetScheduledEndTime(startupAt + takeoffAudioSeconds - 3);
+        ScheduleIdle();
+    }
+    void ScheduleIdle()
+    {
+        if (idleScheduled || Running || !startupClip || startupClip.loadState != AudioDataLoadState.Loaded) return;
+        const float seconds = 5;
+        int frames = Mathf.RoundToInt(seconds * startupClip.frequency);
+        var samples = new float[frames * startupClip.channels];
+        int offset = Mathf.RoundToInt((takeoffAudioSeconds - 3 - seconds) * startupClip.frequency);
+        if (!startupClip.GetData(samples, Mathf.Max(0, offset))) return;
+        // A short edge fade keeps the repeated idle section from clicking.
+        int edge = Mathf.RoundToInt(.012f * startupClip.frequency);
+        for (int i = 0; i < frames; i++)
+        {
+            float fade = Mathf.Clamp01(Mathf.Min(i, frames - 1 - i) / (float)edge);
+            for (int channel = 0; channel < startupClip.channels; channel++) samples[i * startupClip.channels + channel] *= fade;
+        }
+        idleClip = AudioClip.Create("Helicopter pre-takeoff idle", frames, startupClip.channels, startupClip.frequency, false);
+        idleClip.SetData(samples, 0); idle.clip = idleClip; idle.volume = .85f;
+        idle.PlayScheduled(Mathf.Max((float)AudioSettings.dspTime + .02f, (float)(startupAt + takeoffAudioSeconds - 3)));
+        idleScheduled = true;
+    }
+    public bool Begin()
+    {
+        Initialize();
+        if (!initialized || Running || Finished || !pilotEyes || !exteriorCameraAnchor || !startupClip || !chatterClip) return false;
+        PrepareExtraction();
+        bool wasHolding = HoldingForPilot;
+        Running = true; boardedAt = AudioSettings.dspTime;
+        idle.Stop();
+        if (wasHolding)
+        {
+            startup.Stop(); startup.time = takeoffAudioSeconds - 3;
+            double resumedAt = boardedAt + .05;
+            startupAt = resumedAt - (takeoffAudioSeconds - 3);
+            startup.PlayScheduled(resumedAt);
+        }
+        startup.SetScheduledEndTime(startupAt + startupClip.length);
+        startup.spatialBlend = 0;
+        LiftOffStartsAt = Mathf.Max(0, (float)(startupAt + takeoffAudioSeconds - boardedAt));
+        EndsAt = (float)(startupAt + startupClip.length - boardedAt);
+        cameraLocalPosition = view.transform.localPosition; cameraLocalRotation = view.transform.localRotation;
+        cameraFov = view.fieldOfView; cameraNear = view.nearClipPlane;
+        wasMovement = movement && movement.enabled; wasController = controller && controller.enabled;
+        wasProtected = health && health.CinematicProtection;
+        if (movement) movement.enabled = false;
+        if (controller) controller.enabled = false;
+        if (health) health.CinematicProtection = true;
+        Suspend(mission.player.GetComponent<PlayerSoldierPresentation>());
+        foreach (var rifle in FindObjectsByType<RifleWeapon>(FindObjectsInactive.Exclude)) Suspend(rifle);
+        foreach (var ambient in FindObjectsByType<MissionAmbientAudio>(FindObjectsInactive.Exclude)) Suspend(ambient);
+        foreach (var renderer in mission.player.GetComponentsInChildren<Renderer>())
+            if (renderer.enabled) { hidden.Add(renderer); renderer.enabled = false; }
+        foreach (var collider in helicopter.GetComponentsInChildren<Collider>())
+            if (collider.enabled) { disabledColliders.Add(collider); collider.enabled = false; }
+        ChatterStartsAt = LiftOffStartsAt;
+        chatter.volume = .95f; chatter.PlayScheduled(boardedAt + ChatterStartsAt);
+        view.nearClipPlane = .025f; view.fieldOfView = 78;
+        if (sunset) sunset.Begin();
+        Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false;
+        ApplyFlightAndCamera(0);
+        return true;
+    }
+    void Suspend(Behaviour behaviour)
+    {
+        if (!behaviour || !behaviour.enabled) return;
+        suspended.Add(behaviour); behaviour.enabled = false;
+    }
+    void Update()
+    {
+        Initialize();
+        if (!initialized) return;
+        if (!starting || Finished) return;
+        if (!idleScheduled && !Running) ScheduleIdle();
+        float spool = Mathf.Clamp01((float)(AudioSettings.dspTime - startupAt) / spoolSeconds);
+        RotorSpeed = Mathf.SmoothStep(0, 1, spool);
+        if (mainRotor) mainRotor.Rotate(Vector3.up, RotorSpeed * 1800 * Time.deltaTime, Space.World);
+        // The setup creates a pivot aligned with the model's lateral rotor shaft.
+        if (tailRotor) tailRotor.Rotate(Vector3.right, RotorSpeed * 2700 * Time.deltaTime, Space.Self);
+        SetBlades(RotorSpeed > .7f);
+        // Keep the original recording, at its original pitch, through the departure.
+        float fadeOut = Running ? 1 - Mathf.Clamp01((Elapsed - EndsAt + 2) / 2) : 1;
+        startup.volume = (Running ? chatter.isPlaying ? .42f : .68f : .85f) * fadeOut;
+        if (Running && Keyboard.current != null && Elapsed > 1 && Keyboard.current.escapeKey.wasPressedThisFrame) Finish();
+    }
+    void SetBlades(bool flying)
+    {
+        if (parkedBlades) parkedBlades.enabled = !flying;
+        if (flyingBlades) flyingBlades.enabled = flying;
+        if (parkedTail) parkedTail.enabled = !flying;
+        if (flyingTail) flyingTail.enabled = flying;
+    }
+    void LateUpdate()
+    {
+        if (!Running || Finished) return;
+        ApplyFlightAndCamera(Elapsed);
+        if (Elapsed >= EndsAt) Finish();
+    }
+    Vector3 Direction => Vector3.ProjectOnPlane(gatePosition - parkedPosition, Vector3.up).normalized;
+    void ApplyFlightAndCamera(float elapsed)
+    {
+        PresentedTime = elapsed;
+        float liftStart = LiftOffStartsAt;
+        float rise = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(liftStart, liftStart + 5, elapsed));
+        Vector3 hover = parkedPosition + Vector3.up * 18;
+        float travel = Mathf.Clamp01((elapsed - liftStart - 5) / Mathf.Max(1, EndsAt - liftStart - 5));
+        Vector3 beyond = gatePosition + Direction * 120 + Vector3.up * (parkedPosition.y + 85 - gatePosition.y);
+        // A cubic path gives a gentle departure from the hover and clears the gate and buildings.
+        Vector3 a = hover;
+        Vector3 b = hover + Direction * 40 + Vector3.up * 8;
+        Vector3 c = gatePosition + Vector3.up * (parkedPosition.y + 43 - gatePosition.y);
+        float u = 1 - travel;
+        Vector3 route = u*u*u*a + 3*u*u*travel*b + 3*u*travel*travel*c + travel*travel*travel*beyond;
+        helicopter.position = elapsed < liftStart + 5 ? Vector3.Lerp(parkedPosition, hover, rise) : route;
+        Quaternion heading = Quaternion.LookRotation(Direction, Vector3.up);
+        helicopter.rotation = Quaternion.Slerp(parkedRotation, heading,
+            Mathf.SmoothStep(0, 1, Mathf.InverseLerp(liftStart + 1, liftStart + 6, elapsed))) * Quaternion.Euler(travel > 0 && travel < .85f ? 3 : 0, 0, 0);
+        if (sunset) sunset.SetBlend(Mathf.SmoothStep(0, 1, Mathf.InverseLerp(liftStart - 8, liftStart + 4, elapsed)));
+        ExteriorView = elapsed >= ExteriorStartsAt;
+        if (!ExteriorView && helicopter.position.y > parkedPosition.y + 12) LiftedInCockpit = true;
+        if (ExteriorView && FirstExteriorTime < 0) FirstExteriorTime = elapsed;
+        if (!ExteriorView)
+        {
+            view.transform.SetPositionAndRotation(pilotEyes.position, pilotEyes.rotation);
+            view.fieldOfView = 78;
+        }
+        else
+        {
+            ShotIndex = 0;
+            view.transform.position = exteriorCameraAnchor.position;
+            float pan = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(ExteriorStartsAt, EndsAt, elapsed));
+            Vector3 look = Vector3.Lerp(exteriorLookStart, exteriorLookEnd, pan);
+            view.transform.rotation = Quaternion.LookRotation(look - view.transform.position);
+            view.fieldOfView = exteriorFieldOfView;
+        }
+    }
+    void Finish()
+    {
+        if (!Running) return;
+        Finished = true; Running = false;
+        if (startup) startup.Stop(); if (chatter) chatter.Stop(); if (idle) idle.Stop();
+        Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
+        mission.CompleteExtraction();
+    }
+    public void ResetSequence()
+    {
+        if (!initialized) return;
+        bool hadBoarded = Running || Finished;
+        Running = Finished = ExteriorView = starting = false; ShotIndex = -1; RotorSpeed = 0;
+        PresentedTime = 0; LiftedInCockpit = false; FirstExteriorTime = -1;
+        if (startup) { startup.Stop(); startup.spatialBlend = 1; }
+        if (chatter) chatter.Stop(); if (idle) idle.Stop();
+        if (idleClip) Destroy(idleClip); idleClip = null; idleScheduled = false;
+        if (sunset) sunset.ResetLighting();
+        if (helicopter) helicopter.SetPositionAndRotation(parkedPosition, parkedRotation);
+        if (mainRotor) mainRotor.localRotation = mainRotation;
+        if (tailRotor) tailRotor.localRotation = tailRotation;
+        SetBlades(false);
+        if (hadBoarded)
+        {
+            if (view)
+            {
+                view.transform.localPosition = cameraLocalPosition; view.transform.localRotation = cameraLocalRotation;
+                view.fieldOfView = cameraFov; view.nearClipPlane = cameraNear;
+            }
+            if (health) health.CinematicProtection = wasProtected;
+            if (movement) movement.enabled = wasMovement;
+            if (controller) controller.enabled = wasController;
+        }
+        foreach (var behaviour in suspended) if (behaviour) behaviour.enabled = true;
+        foreach (var renderer in hidden) if (renderer) renderer.enabled = true;
+        foreach (var collider in disabledColliders) if (collider) collider.enabled = true;
+        suspended.Clear(); hidden.Clear(); disabledColliders.Clear();
+    }
+    void OnGUI()
+    {
+        if (!Running && !Finished) return;
+        int oldDepth = GUI.depth; GUI.depth = -500;
+        Color previous = GUI.color;
+        float fade = Finished ? 1 : Mathf.Max(1 - Elapsed / .6f,
+            Mathf.Clamp01((Elapsed - EndsAt + 2) / 2));
+        GUI.color = new Color(0, 0, 0, fade);
+        GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+        if (Running && ExteriorView)
+        {
+            GUI.color = Color.black;
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height * .07f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0, Screen.height * .93f, Screen.width, Screen.height * .07f), Texture2D.whiteTexture);
+        }
+        if (Running)
+        {
+            GUI.color = new Color(1, 1, 1, .6f);
+            GUI.Label(new Rect(Screen.width - 165, Screen.height - 38, 150, 24), "ESC  Skip extraction");
+        }
+        GUI.color = previous; GUI.depth = oldDepth;
+    }
+    void OnDisable() { if (initialized) ResetSequence(); }
+}
