@@ -9,6 +9,17 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     public Transform helicopter, pilotEyes, mainRotor, tailRotor;
     public Renderer parkedBlades, flyingBlades, parkedTail, flyingTail;
     public AudioClip startupClip, chatterClip;
+    public AudioClip outroMusic;
+    [Range(0, 1)] public float outroMusicVolume = .28f;
+    [Range(0, 1)] public float approachEngineVolume = .45f;
+    [Range(0, 1)] public float cabinEngineVolume = .2f;
+    [Range(0, 1)] public float chatterVolume = .75f;
+    [Min(.1f)] public float engineHandoffSeconds = 1.2f;
+    [Min(1)] public float engineFadeOutSeconds = 6;
+    [Min(1)] public float visualFadeSeconds = 3.5f;
+    [Min(.1f)] public float musicFadeInSeconds = 1.75f;
+    [Min(0)] public float musicBlackHoldSeconds = 1;
+    [Min(.1f)] public float musicFadeOutSeconds = 3;
     public Vector3 gatePosition = new Vector3(4, 0, -90);
     public Transform exteriorCameraAnchor;
     public Vector3 exteriorTravelOffset = new Vector3(14, 0, 0);
@@ -44,7 +55,10 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     public float RotorSpeed { get; private set; }
     public int ShotIndex { get; private set; } = -1;
 
-    AudioSource startup, chatter, idle;
+    AudioSource startup, chatter, idle, music;
+    double musicStartedAt = -1, musicBlackAt = -1;
+    float musicTailVolume;
+    float handoffStartVolume, cabinGain;
     AudioLowPassFilter startupMuffle, idleMuffle;
     float obstructionGain = 1, obstructionTarget = 1;
     float nextObstructionCheck;
@@ -80,7 +94,9 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         startup = MakeSource("Helicopter startup", startupClip, false);
         chatter = MakeSource("Helicopter radio chatter", chatterClip, false);
         idle = MakeSource("Helicopter waiting for pilot", null, true);
-        foreach (var clip in new[] { startupClip, chatterClip }) if (clip) clip.LoadAudioData();
+        music = MakeSource("Outro background music", outroMusic, true);
+        music.volume = 0;
+        foreach (var clip in new[] { startupClip, chatterClip, outroMusic }) if (clip) clip.LoadAudioData();
         ConfigureApproachSource(startup); ConfigureApproachSource(idle);
         startupMuffle = startup.gameObject.AddComponent<AudioLowPassFilter>();
         idleMuffle = idle.gameObject.AddComponent<AudioLowPassFilter>();
@@ -113,9 +129,10 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
                 }
             }
         }
-        obstructionGain = immediate ? obstructionTarget : Mathf.MoveTowards(obstructionGain, obstructionTarget, Time.unscaledDeltaTime / .6f);
+        obstructionGain = immediate ? obstructionTarget : Mathf.Lerp(obstructionGain, obstructionTarget, 1 - Mathf.Exp(-Time.unscaledDeltaTime / .8f));
         float distanceGain = Mathf.SmoothStep(0, 1, Mathf.InverseLerp(engineFadeDistance, nearEngineDistance, Vector3.Distance(position, helicopter.position)));
-        ApproachVolumeScale = distanceGain * obstructionGain;
+        float target = distanceGain * obstructionGain;
+        ApproachVolumeScale = immediate ? target : Mathf.Lerp(ApproachVolumeScale, target, 1 - Mathf.Exp(-Time.unscaledDeltaTime / .35f));
         float cutoff = Mathf.Lerp(750, 22000, obstructionGain);
         if (startupMuffle) { startupMuffle.enabled = true; startupMuffle.cutoffFrequency = cutoff; }
         if (idleMuffle) { idleMuffle.enabled = true; idleMuffle.cutoffFrequency = cutoff; }
@@ -139,7 +156,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         float runupOffset = Mathf.Max(0, takeoffAudioSeconds - boardingLeadSeconds - 8);
         double startsAt = AudioSettings.dspTime + .05;
         startupAt = startsAt - runupOffset;
-        startup.time = runupOffset; startup.volume = .85f * ApproachVolumeScale; startup.PlayScheduled(startsAt);
+        startup.time = runupOffset; startup.volume = approachEngineVolume * ApproachVolumeScale; startup.PlayScheduled(startsAt);
         // Stop before the takeoff cue if the player needs longer to reach the aircraft.
         startup.SetScheduledEndTime(startupAt + takeoffAudioSeconds - boardingLeadSeconds);
         ScheduleIdle();
@@ -160,7 +177,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
             for (int channel = 0; channel < startupClip.channels; channel++) samples[i * startupClip.channels + channel] *= fade;
         }
         idleClip = AudioClip.Create("Helicopter pre-takeoff idle", frames, startupClip.channels, startupClip.frequency, false);
-        idleClip.SetData(samples, 0); idle.clip = idleClip; idle.volume = .85f * ApproachVolumeScale; idle.loop = true;
+        idleClip.SetData(samples, 0); idle.clip = idleClip; idle.volume = approachEngineVolume * ApproachVolumeScale; idle.loop = true;
         idle.PlayScheduled(System.Math.Max(AudioSettings.dspTime + .02, startupAt + takeoffAudioSeconds - boardingLeadSeconds));
         idleScheduled = true;
     }
@@ -171,6 +188,8 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         PrepareExtraction();
         bool wasHolding = HoldingForPilot;
         float previousCursor = RecordingTime;
+        handoffStartVolume = wasHolding ? idle.volume : startup.volume;
+        cabinGain = cabinEngineVolume;
         Running = true; boardedAt = AudioSettings.dspTime;
         if (startupMuffle) startupMuffle.enabled = false;
         if (idleMuffle) idleMuffle.enabled = false;
@@ -180,7 +199,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
             idle.Stop(); idle.clip = startupClip; idle.loop = false;
             idle.time = previousCursor; idle.Play();
         }
-        idle.spatialBlend = 0; idle.volume = .68f; handoffActive = true;
+        idle.spatialBlend = 0; idle.volume = handoffStartVolume; handoffActive = true;
         startup.Stop();
         double resumedAt = boardedAt + .05;
         startupAt = boardedAt + boardingLeadSeconds - takeoffAudioSeconds;
@@ -190,6 +209,12 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         startup.spatialBlend = 0;
         LiftOffStartsAt = Mathf.Max(0, (float)(startupAt + takeoffAudioSeconds - boardedAt));
         EndsAt = (float)(startupAt + startupClip.length - boardedAt);
+        if (music && outroMusic)
+        {
+            music.Stop(); music.clip = outroMusic; music.time = 0; music.volume = 0;
+            musicStartedAt = boardedAt + .05; musicBlackAt = -1;
+            music.PlayScheduled(musicStartedAt);
+        }
         cameraLocalPosition = view.transform.localPosition; cameraLocalRotation = view.transform.localRotation;
         cameraFov = view.fieldOfView; cameraNear = view.nearClipPlane;
         wasMovement = movement && movement.enabled; wasController = controller && controller.enabled;
@@ -205,7 +230,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         foreach (var collider in helicopter.GetComponentsInChildren<Collider>())
             if (collider.enabled) { disabledColliders.Add(collider); collider.enabled = false; }
         ChatterStartsAt = LiftOffStartsAt;
-        chatter.volume = .95f; chatter.PlayScheduled(boardedAt + ChatterStartsAt);
+        chatter.volume = chatterVolume; chatter.PlayScheduled(boardedAt + ChatterStartsAt);
         view.nearClipPlane = .025f; view.fieldOfView = 78;
         if (sunset) sunset.Begin();
         Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false;
@@ -221,6 +246,8 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     {
         Initialize();
         if (!initialized) return;
+        // Music has its own audio-clock envelope and must keep updating after the visuals finish.
+        UpdateMusic();
         if (!starting || Finished) return;
         if (!Running) UpdateApproachAudio();
         if (!idleScheduled && !Running) ScheduleIdle();
@@ -231,16 +258,39 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         if (tailRotor) tailRotor.Rotate(Vector3.right, RotorSpeed * 2700 * Time.deltaTime, Space.Self);
         SetBlades(RotorSpeed > .7f);
         // Keep the original recording, at its original pitch, through the departure.
-        float fadeOut = Running ? 1 - Mathf.Clamp01((Elapsed - EndsAt + 2) / 2) : 1;
-        float blend = Running ? Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.05f, .25f, Elapsed)) : 1;
-        startup.volume = (Running ? chatter.isPlaying ? .42f : .68f : .85f * ApproachVolumeScale) * fadeOut * blend;
-        if (!Running) idle.volume = .85f * ApproachVolumeScale;
+        float fadeProgress = Running ? Mathf.Clamp01((Elapsed - EndsAt + engineFadeOutSeconds) / engineFadeOutSeconds) : 0;
+        float fadeOut = fadeProgress >= 1 ? 0 : Mathf.Pow(10, -48 * Mathf.SmoothStep(0, 1, fadeProgress) / 20);
+        float blend = Running ? Mathf.SmoothStep(0, 1, Mathf.InverseLerp(.05f, .05f + engineHandoffSeconds, Elapsed)) : 1;
+        float targetCabinGain = cabinEngineVolume * (chatter.isPlaying ? .65f : 1);
+        cabinGain = Mathf.Lerp(cabinGain, targetCabinGain, 1 - Mathf.Exp(-Time.unscaledDeltaTime / .8f));
+        startup.volume = (Running ? cabinGain : approachEngineVolume * ApproachVolumeScale) * fadeOut * Mathf.Sin(blend * Mathf.PI * .5f);
+        if (!Running) idle.volume = approachEngineVolume * ApproachVolumeScale;
         if (handoffActive)
         {
-            idle.volume = .68f * (1 - blend);
+            idle.volume = handoffStartVolume * Mathf.Cos(blend * Mathf.PI * .5f);
             if (blend >= 1) { idle.Stop(); handoffActive = false; }
         }
         if (Running && Keyboard.current != null && Elapsed > 1 && Keyboard.current.escapeKey.wasPressedThisFrame) Finish();
+    }
+    void UpdateMusic()
+    {
+        if (!music || musicStartedAt < 0) return;
+        double now = AudioSettings.dspTime;
+        if (musicBlackAt < 0)
+        {
+            float fade = Mathf.SmoothStep(0, 1, Mathf.Clamp01((float)(now - musicStartedAt) / Mathf.Max(.1f, musicFadeInSeconds)));
+            music.volume = outroMusicVolume * fade;
+        }
+        else
+        {
+            float afterBlack = (float)(now - musicBlackAt);
+            float fade = Mathf.SmoothStep(0, 1, Mathf.Clamp01((afterBlack - musicBlackHoldSeconds) / Mathf.Max(.1f, musicFadeOutSeconds)));
+            music.volume = musicTailVolume * (1 - fade);
+            if (afterBlack >= musicBlackHoldSeconds + musicFadeOutSeconds)
+            {
+                music.Stop(); music.volume = 0; musicStartedAt = -1;
+            }
+        }
     }
     void SetBlades(bool flying)
     {
@@ -296,6 +346,12 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     {
         if (!Running) return;
         Finished = true; Running = false;
+        if (music && musicStartedAt >= 0)
+        {
+            musicBlackAt = AudioSettings.dspTime;
+            musicTailVolume = music.volume;
+            music.SetScheduledEndTime(musicBlackAt + musicBlackHoldSeconds + Mathf.Max(.1f, musicFadeOutSeconds));
+        }
         if (startup) startup.Stop(); if (chatter) chatter.Stop(); if (idle) idle.Stop();
         Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
         mission.CompleteExtraction();
@@ -308,6 +364,8 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         PresentedTime = 0; LiftedInCockpit = false; FirstExteriorTime = -1;
         if (startup) { startup.Stop(); startup.spatialBlend = 1; }
         if (chatter) chatter.Stop(); if (idle) { idle.Stop(); idle.spatialBlend = 1; }
+        if (music) { music.Stop(); music.volume = 0; }
+        musicStartedAt = musicBlackAt = -1; musicTailVolume = 0;
         if (idleClip) Destroy(idleClip); idleClip = null; idleScheduled = false;
         handoffActive = false;
         ApproachVolumeScale = 0;
@@ -339,7 +397,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
         int oldDepth = GUI.depth; GUI.depth = -500;
         Color previous = GUI.color;
         float fade = Finished ? 1 : Mathf.Max(1 - Elapsed / .6f,
-            Mathf.Clamp01((Elapsed - EndsAt + 2) / 2));
+            Mathf.SmoothStep(0, 1, Mathf.Clamp01((Elapsed - EndsAt + visualFadeSeconds) / visualFadeSeconds)));
         GUI.color = new Color(0, 0, 0, fade);
         GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
         if (Running && ExteriorView)

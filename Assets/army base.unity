@@ -70343,6 +70343,17 @@ MonoBehaviour:
   flyingTail: {fileID: 3452327611849210214}
   startupClip: {fileID: 8300000, guid: 3cbf41c5fc355a549a45333152f9289b, type: 3}
   chatterClip: {fileID: 8300000, guid: daaea39dc6ac6834c937033d369fd889, type: 3}
+  outroMusic: {fileID: 8300000, guid: 4df4389cd41787d46b160e69e96860f1, type: 3}
+  outroMusicVolume: 0.28
+  approachEngineVolume: 0.45
+  cabinEngineVolume: 0.2
+  chatterVolume: 0.75
+  engineHandoffSeconds: 1.2
+  engineFadeOutSeconds: 6
+  visualFadeSeconds: 3.5
+  musicFadeInSeconds: 1.75
+  musicBlackHoldSeconds: 1
+  musicFadeOutSeconds: 3
   gatePosition: {x: 3.9, y: 0, z: -90.46019}
   exteriorCameraAnchor: {fileID: 834280409}
   exteriorTravelOffset: {x: 14, y: 0, z: 0}

@@ -86,6 +86,12 @@ public static class HelicopterOutroSetup
         outro.pilotEyes = eyes;
         outro.startupClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Vehicles/HelicopterStart.mp3");
         outro.chatterClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Ambiance/HelicopterChatter.mp3");
+        outro.outroMusic = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Ambiance/OutroMusic.mp3");
+        if (!outro.outroMusic) throw new InvalidOperationException("OutroMusic.mp3 is missing or has not imported.");
+        outro.outroMusicVolume = .28f; outro.musicFadeInSeconds = 1.75f;
+        outro.approachEngineVolume = .45f; outro.cabinEngineVolume = .2f; outro.chatterVolume = .75f;
+        outro.engineHandoffSeconds = 1.2f; outro.engineFadeOutSeconds = 6; outro.visualFadeSeconds = 3.5f;
+        outro.musicBlackHoldSeconds = 1; outro.musicFadeOutSeconds = 3;
         outro.spoolSeconds = 2; outro.boardingLeadSeconds = 2;
         outro.takeoffAudioSeconds = 55; outro.afterChatterSeconds = 3;
         outro.gatePosition = mission.intro ? mission.intro.entryPlanePoint : new Vector3(4, 0, -90);
@@ -116,8 +122,23 @@ public static class HelicopterOutroSetup
         EditorUtility.SetDirty(outro); EditorUtility.SetDirty(mission);
         EditorSceneManager.MarkSceneDirty(heli.gameObject.scene);
         EditorSceneManager.SaveScene(heli.gameObject.scene); AssetDatabase.SaveAssets();
+        InspectMixLevels(outro);
         File.WriteAllText(Work + "/installed.txt", $"Installed in {heli.gameObject.scene.path}\nPilot eyes: {eyes.position:F3}\nUSB removal starts the running-engine audio and rotors. Boarding cuts to the takeoff lead-in with a 0.2s crossfade.\nTakeoff: {outro.boardingLeadSeconds:F3}s after boarding, aligned to the recording's {outro.takeoffAudioSeconds:F3}s cue.\nChatter: {outro.chatterClip.length:F3}s; exterior begins exactly 3s after chatter.\nGate: {outro.gatePosition}\nOne {outro.exteriorFieldOfView} degree shot travels {outro.exteriorTravelOffset} across the road, tracking the helicopter.\nDeparture-only orange dusk transition.\n");
         IntelTheftSetup.Capture(eyes.position, eyes.position + eyes.forward * 10, "outro-pilot-installed");
+    }
+    static void InspectMixLevels(HelicopterOutroSequence outro)
+    {
+        float Rms(AudioClip clip, float start, float seconds)
+        {
+            clip.LoadAudioData();
+            int frames = Mathf.RoundToInt(Mathf.Min(seconds, clip.length - start) * clip.frequency);
+            var samples = new float[frames * clip.channels];
+            if (!clip.GetData(samples, Mathf.RoundToInt(start * clip.frequency))) return 0;
+            double sum = 0; foreach (float sample in samples) sum += sample * sample;
+            return (float)Math.Sqrt(sum / samples.Length);
+        }
+        File.WriteAllText(Work + "/audio-mix-levels.txt",
+            $"Music first 6s RMS: {Rms(outro.outroMusic, 0, 6):F5}\nMusic 6-20s RMS: {Rms(outro.outroMusic, 6, 14):F5}\nEngine takeoff RMS: {Rms(outro.startupClip, 53, 12):F5}\nMusic gain: {outro.outroMusicVolume:F2}; cabin engine gain: {outro.cabinEngineVolume:F2}; approach engine gain: {outro.approachEngineVolume:F2}\n");
     }
     static void ConfigureBoarding(HelicopterExtractionZone extraction, Transform heli)
     {

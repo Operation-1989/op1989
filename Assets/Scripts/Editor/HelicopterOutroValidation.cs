@@ -23,6 +23,9 @@ public static class HelicopterOutroValidation
     static Material priorSky;
     static float priorSunIntensity;
     static float audioCheckAt, indoorVolume, distantVolume;
+    static AudioSource music;
+    static double blackMusicCheckAt;
+    static float blackMusicVolume;
     static readonly HashSet<int> observerAngles = new HashSet<int>();
     struct Snapshot { public string name; public Vector3 heli, camera; public Quaternion heliRotation, cameraRotation; public float fov, sunsetBlend; }
     static readonly List<Snapshot> snapshots = new List<Snapshot>();
@@ -116,6 +119,8 @@ public static class HelicopterOutroValidation
                 parked = outro.helicopter.position; rotor = outro.mainRotor.localRotation;
                 priorSky = RenderSettings.skybox; priorSunIntensity = outro.sunset.sunlight.intensity;
                 Check("Takeoff uses the recording's 55-second cue", Mathf.Approximately(outro.takeoffAudioSeconds, 55));
+                music = outro.helicopter.GetComponentsInChildren<AudioSource>().First(s => s.name == "Outro background music");
+                Check("Outro music is assigned but silent before boarding", outro.outroMusic && music.clip == outro.outroMusic && !music.isPlaying && music.volume == 0);
                 Check("Indoor engine muffling is bound to the control room", outro.engineMuffleRoom);
                 var observers = outro.observerViews;
                 Check("Front and cinematic cameras use Displays 4 and 5", observers && observers.frontCamera && observers.cinematicCamera &&
@@ -197,6 +202,7 @@ public static class HelicopterOutroValidation
                 if (outro.PresentedTime < .35f) return;
                 Remember("pilot-startup");
                 Check("Startup is viewed from the pilot seat", !outro.ExteriorView && Vector3.Distance(mission.playerCamera.transform.position, outro.pilotEyes.position) < .02f);
+                Check("Music fades in after boarding at the revised audible level", music.isPlaying && music.spatialBlend == 0 && music.volume > 0 && music.volume <= outro.outroMusicVolume && outro.outroMusicVolume >= .25f);
                 if (outro.PresentedTime < outro.LiftOffStartsAt)
                     Check("Helicopter waits only for the short audio lead-in", Mathf.Abs(outro.helicopter.position.y - parked.y) < .02f);
                 if (lateMode)
@@ -207,6 +213,7 @@ public static class HelicopterOutroValidation
                     Check("Late boarding also leaves only two seconds before takeoff", Mathf.Abs(outro.LiftOffStartsAt - 2) < .02f);
                     mission.SendMessage("Replay"); outro.takeoffAudioSeconds = 55;
                     Check("Late-boarding replay restores helicopter and lighting", !outro.Running && Vector3.Distance(outro.helicopter.position, parked) < .01f && RenderSettings.skybox == priorSky);
+                    Check("Replay stops the outro music immediately", !music.isPlaying && music.volume == 0);
                     File.AppendAllText(ReportPath, "PASS COMPLETE\n"); Stop(); return;
                 }
                 stage = 5; return;
@@ -219,6 +226,8 @@ public static class HelicopterOutroValidation
                 Check("Liftoff is after the recording reaches its takeoff cue", outro.RecordingTime >= outro.takeoffAudioSeconds);
                 var source = outro.helicopter.GetComponentsInChildren<AudioSource>().First(s => s.name == "Helicopter startup");
                 Check("Original recording is audibly playing at liftoff without pitch changes", source.isPlaying && source.clip == outro.startupClip && Mathf.Approximately(source.pitch, 1));
+                Check("Engine is quieter so the music can be heard", source.volume <= .21f && music.volume > source.volume);
+                Check("Helicopter uses an extended smooth handoff and departure fade", outro.engineHandoffSeconds >= 1 && outro.engineFadeOutSeconds >= 6 && outro.visualFadeSeconds >= 3);
                 Check("Aircraft timeline matches the actual audio playback cursor", Mathf.Abs(source.time - outro.RecordingTime) < .5f);
                 File.AppendAllText(ReportPath, $"INFO Liftoff sample: recording cursor={source.time:F3}s, sequence recording time={outro.RecordingTime:F3}s\n");
                 Remember("pilot-liftoff"); stage = 6; return;
@@ -242,6 +251,21 @@ public static class HelicopterOutroValidation
                 Check("Helicopter leaves beyond the main gate", Vector3.Dot(outro.helicopter.position - outro.gatePosition, (outro.gatePosition - parked).normalized) > 50);
                 Check("Departure lighting becomes darker with an orange sky", outro.sunset.Blend > .99f && outro.sunset.sunlight.intensity < priorSunIntensity && RenderSettings.skybox != priorSky);
                 Check("Display 5 shows multiple cinematic angles", observerAngles.Count >= 3);
+                Check("Music continues softly after the cinematic fades to black", music.isPlaying && music.volume > 0 && music.volume <= outro.outroMusicVolume);
+                blackMusicCheckAt = AudioSettings.dspTime; blackMusicVolume = music.volume;
+                stage = 22; return;
+            }
+            if (stage == 22)
+            {
+                double afterBlack = AudioSettings.dspTime - blackMusicCheckAt;
+                if (afterBlack < outro.musicBlackHoldSeconds + outro.musicFadeOutSeconds * .5f) return;
+                Check("Music fades down after the black-screen hold", music.volume < blackMusicVolume);
+                stage = 23; return;
+            }
+            if (stage == 23)
+            {
+                if (AudioSettings.dspTime - blackMusicCheckAt < outro.musicBlackHoldSeconds + outro.musicFadeOutSeconds + .15f || music.volume > .0001f) return;
+                Check("Music stops a few seconds after the screen turns black", !music.isPlaying && music.volume == 0);
                 snapshotIndex = 0; stage = 7; return;
             }
             if (stage == 7)
@@ -259,6 +283,7 @@ public static class HelicopterOutroValidation
                 Check("Replay resets mission, helicopter, and controls", mission.State == IntelTheftMission.Phase.FindComputer && !outro.Finished && !outro.Running && Vector3.Distance(outro.helicopter.position, parked) < .01f && mission.player.GetComponent<FirstPersonController>().enabled);
                 Check("Replay restores player vulnerability", !mission.player.GetComponent<CombatHealth>().CinematicProtection);
                 Check("Replay restores the original lighting", RenderSettings.skybox == priorSky && Mathf.Approximately(outro.sunset.sunlight.intensity, priorSunIntensity));
+                Check("Replay leaves no outro music playing", !music.isPlaying && music.volume == 0);
                 poseFrame = Time.frameCount; stage = 9; return;
             }
             if (stage == 8)
