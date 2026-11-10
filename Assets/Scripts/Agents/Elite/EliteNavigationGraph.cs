@@ -10,10 +10,43 @@ public sealed class EliteNavigationGraph : MonoBehaviour
     [Min(.05f)] public float radius = .34f;
     [Min(.2f)] public float height = 1.9f;
     public LayerMask obstacleLayers = ~0;
+    [Tooltip("Optional planar room boundary. Graph nodes and movement endpoints stay inside it.")]
+    public BoxCollider navigationArea;
     public bool drawGraph;
+    int queryBatchDepth;
+    readonly Dictionary<(Vector3, Vector3, Transform), bool> segmentCache = new Dictionary<(Vector3, Vector3, Transform), bool>();
+    readonly Dictionary<(Vector3, Vector3, Transform), float> exposureCache = new Dictionary<(Vector3, Vector3, Transform), float>();
+
+    // A synchronous decision can compare several covers against one physics snapshot.
+    // EndQueryBatch discards it; movement and later decisions always see new obstacles.
+    public void BeginQueryBatch()
+    {
+        if (queryBatchDepth++ == 0) { segmentCache.Clear(); exposureCache.Clear(); }
+    }
+    public void EndQueryBatch()
+    {
+        queryBatchDepth = Mathf.Max(0, queryBatchDepth - 1);
+        if (queryBatchDepth == 0) { segmentCache.Clear(); exposureCache.Clear(); }
+    }
+    bool SearchSegment(Vector3 a, Vector3 b, Transform owner)
+    {
+        if (queryBatchDepth == 0) return ClearSegment(a, b, owner);
+        var key = (a, b, owner);
+        if (!segmentCache.TryGetValue(key, out bool clear)) { clear = ClearSegment(a, b, owner); segmentCache[key] = clear; }
+        return clear;
+    }
+
+    public bool Contains(Vector3 point)
+    {
+        if (!navigationArea) return true;
+        Vector3 local = navigationArea.transform.InverseTransformPoint(point) - navigationArea.center;
+        Vector3 half = navigationArea.size * .5f;
+        return Mathf.Abs(local.x) <= half.x && Mathf.Abs(local.z) <= half.z;
+    }
 
     public bool ClearSegment(Vector3 a, Vector3 b, Transform owner)
     {
+        if (!Contains(a) || !Contains(b)) return false;
         Vector3 bottom = a + Vector3.up * (radius + .08f);
         Vector3 top = a + Vector3.up * Mathf.Max(radius + .08f, height - radius);
         foreach (var c in Physics.OverlapCapsule(bottom, top, radius, obstacleLayers, QueryTriggerInteraction.Ignore))
@@ -33,7 +66,7 @@ public sealed class EliteNavigationGraph : MonoBehaviour
         Vector3 post, float defensiveRadius, List<Vector3> path, out float cost, out int expanded)
     {
         path.Clear(); cost = 0; expanded = 0;
-        if (!Finite(start) || !Finite(goal) || !Inside(goal, post, defensiveRadius)) return false;
+        if (!Finite(start) || !Finite(goal) || !Contains(start) || !Contains(goal) || !Inside(goal, post, defensiveRadius)) return false;
         if (Vector3.Distance(start, goal) < .01f)
         {
             if (!ClearSegment(start, goal, owner)) return false;
@@ -42,11 +75,23 @@ public sealed class EliteNavigationGraph : MonoBehaviour
         // Include exact endpoints; never snap through a wall to a nearby graph node.
         var points = new List<Vector3> { start, goal };
         foreach (var node in nodes)
-            if (node && Inside(node.position, post, defensiveRadius) && Finite(node.position)) points.Add(node.position);
+            if (node && Contains(node.position) && Inside(node.position, post, defensiveRadius) && Finite(node.position)) points.Add(node.position);
+        var localExposure = new Dictionary<Vector3, float>();
+        float Exposure(Vector3 p)
+        {
+            if (!threat.HasValue) return 0;
+            if (localExposure.TryGetValue(p, out float value)) return value;
+            var key = (threat.Value, p, owner);
+            if (queryBatchDepth == 0 || !exposureCache.TryGetValue(key, out value))
+            {
+                value = ElitePerception.Clear(threat.Value, p + Vector3.up * 1.3f, owner, null, obstacleLayers) ? 1 : 0;
+                if (queryBatchDepth > 0) exposureCache[key] = value;
+            }
+            localExposure[p] = value; return value;
+        }
         var result = Search(points, 0, 1,
             (a, b) => (Vector3.Distance(points[a], points[b]) <= connectionDistance || (a < 2 && b < 2 && Vector3.Distance(points[a], points[b]) < .05f)) &&
-                      ClearSegment(points[a], points[b], owner),
-            p => threat.HasValue && ElitePerception.Clear(threat.Value, p + Vector3.up * 1.3f, owner, null, obstacleLayers) ? 1 : 0,
+                      SearchSegment(points[a], points[b], owner), Exposure,
             Mathf.Max(0, exposurePenalty), out cost, out expanded);
         if (result == null) return false;
         foreach (int index in result) path.Add(points[index]);

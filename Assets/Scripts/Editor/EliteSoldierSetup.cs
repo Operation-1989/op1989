@@ -28,6 +28,10 @@ public static class EliteSoldierSetup
             else if (command == "build") BuildTestScene();
             else if (command == "validate") EliteSoldierValidation.Run();
             else if (command == "integrate") Integrate();
+            else if (command == "repair-post") RepairGuardPost();
+            else if (command == "check-post") EliteGuardPostValidation.Run();
+            else if (command == "computer-room") InstallComputerRoomDefense();
+            else if (command == "inspect-cover") InspectComputerRoomCover();
             else throw new InvalidOperationException("Unknown elite command: " + command);
         }
         catch (Exception e) { Directory.CreateDirectory(Work); File.WriteAllText(Work + "/error.txt", e.ToString()); Debug.LogException(e); }
@@ -98,10 +102,9 @@ public static class EliteSoldierSetup
         go.transform.position = position; go.transform.localScale = scale; return go;
     }
 
-    public static EliteNavigationGraph Grid(Transform parent, Bounds area, float groundY)
+    public static EliteNavigationGraph Grid(Transform parent, Bounds area, float groundY, float spacing = 1.4f)
     {
         var graph = new GameObject("Elite Ground Graph").AddComponent<EliteNavigationGraph>(); graph.transform.SetParent(parent);
-        const float spacing = 1.4f;
         var nodes = new System.Collections.Generic.List<Transform>();
         Physics.SyncTransforms();
         for (float x = area.min.x + .5f; x < area.max.x - .5f; x += spacing)
@@ -183,9 +186,8 @@ public static class EliteSoldierSetup
         float y = floor.GetComponent<Renderer>().bounds.max.y + .04f;
         var graph = Grid(root, room, y);
         if (graph.nodes.Length == 0) { Object.DestroyImmediate(root.gameObject); throw new InvalidOperationException("No clear ground nodes inside the control room."); }
-        var desired = terminal.transform.position + Vector3.back * 4; desired.y = y;
-        var chosen = graph.nodes.OrderBy(n => Vector3.Distance(n.position, desired)).First();
-        var post = Marker("Control Room Guard Post", root, chosen.position); post.rotation = Quaternion.Euler(0, 180, 0);
+        ChooseEntrancePost(graph, room, null, out Vector3 position, out Quaternion rotation, out _);
+        var post = Marker("Control Room Guard Post", root, position); post.rotation = rotation;
         var covers = new System.Collections.Generic.List<EliteCoverPoint>();
         foreach (var mesh in props.Where(m => new[] { "server", "desk", "cabinet", "pillar", "column" }.Any(s => m.name.IndexOf(s, StringComparison.OrdinalIgnoreCase) >= 0)))
         {
@@ -206,5 +208,246 @@ public static class EliteSoldierSetup
         guard.GetComponent<EliteMovement>().graph = graph; guard.GetComponent<ElitePerception>().target = player.transform;
         EditorSceneManager.MarkSceneDirty(scene); EditorSceneManager.SaveScene(scene);
         File.WriteAllText(Work + "/integration.txt", $"Control room {room}\nGuard post {post.position}\nNodes {graph.nodes.Length}\nCover candidates {covers.Count}\nExisting room props reused. Playtest door and cover clearances in the main scene.\n");
+        InstallComputerRoomDefense();
+        File.AppendAllText(Work + "/integration.txt", "\nFinal computer-room placement:\n" + File.ReadAllText(Work + "/computer-room.txt"));
+    }
+
+    // The floor bounds already identify the main building's central entrance corridor
+    // in MainBuildingEntrancePassage. Watch its interior approach, not the wall beside the terminal.
+    public static void ChooseEntrancePost(EliteNavigationGraph graph, Bounds room, Transform owner,
+        out Vector3 position, out Quaternion rotation, out Vector3 approach)
+    {
+        if (graph && graph.navigationArea)
+        {
+            ChooseComputerRoomPost(graph, owner, out position, out rotation, out approach); return;
+        }
+        if (!graph || graph.nodes == null || graph.nodes.Length == 0) throw new InvalidOperationException("Guard navigation graph is missing.");
+        Physics.SyncTransforms();
+        var candidates = graph.nodes.Where(n => n && graph.ClearSegment(n.position, n.position, owner)).ToArray();
+        if (candidates.Length == 0) throw new InvalidOperationException("No clear standing positions in the control room.");
+        Vector3 entrance = new Vector3(room.center.x, candidates[0].position.y, room.min.z + 2);
+        approach = candidates.OrderBy(n => Vector3.Distance(n.position, entrance)).First().position;
+        Vector3 aim = approach + Vector3.up * 1.45f;
+        Vector3 preferred = approach + Vector3.forward * 5;
+        var path = new System.Collections.Generic.List<Vector3>();
+        foreach (var node in candidates.OrderBy(n => Vector3.Distance(n.position, preferred)))
+        {
+            Vector3 delta = approach - node.position; delta.y = 0;
+            if (delta.magnitude < 3 || delta.magnitude > 10) continue;
+            Quaternion facing = Quaternion.LookRotation(delta);
+            Vector3 muzzle = node.position + Vector3.up * 1.35f + facing * new Vector3(.18f, 0, .8f);
+            if (!ElitePerception.Clear(node.position + Vector3.up * 1.55f, aim, owner, null) ||
+                !ElitePerception.Clear(muzzle, aim, owner, null)) continue;
+            if (!graph.FindPath(node.position, approach, owner, null, 0, node.position, 16, path, out _, out _)) continue;
+            position = node.position; rotation = facing; return;
+        }
+        throw new InvalidOperationException("No reachable guard post has a clear view of the entrance approach. Inspect the room colliders.");
+    }
+
+    [MenuItem("Operation 1989/Elite/5 Repair Entrance Guard Post")]
+    public static void RepairGuardPost()
+    {
+        if (Application.isPlaying || SceneManager.GetActiveScene().path != "Assets/army base.unity")
+            throw new InvalidOperationException("Open army base in Edit mode.");
+        var guard = Object.FindAnyObjectByType<EliteGuardController>();
+        var ambience = Object.FindAnyObjectByType<MissionAmbientAudio>();
+        if (!guard || !guard.guardPost || !ambience || !ambience.controlRoom) throw new InvalidOperationException("The integrated guard and control room are required.");
+        ChooseEntrancePost(guard.GetComponent<EliteMovement>().graph, ambience.controlRoom.bounds, guard.transform,
+            out Vector3 position, out Quaternion rotation, out Vector3 approach);
+        Directory.CreateDirectory(Work);
+        EditorSceneManager.SaveScene(guard.gameObject.scene, Work + "/before-post-repair.unity", true);
+        Undo.RecordObjects(new Object[] { guard.transform, guard.guardPost }, "Face elite toward the entrance");
+        guard.transform.SetPositionAndRotation(position, rotation);
+        guard.guardPost.SetPositionAndRotation(position, rotation);
+        PrefabUtility.RecordPrefabInstancePropertyModifications(guard.transform);
+        EditorSceneManager.MarkSceneDirty(guard.gameObject.scene); EditorSceneManager.SaveScene(guard.gameObject.scene);
+        File.WriteAllText(Work + "/post-repair.txt", $"Post {position}\nFacing {rotation.eulerAngles}\nEntrance approach {approach}\nPASS Standing clearance, eye and muzzle sightlines, and A* approach reachability.\n");
+    }
+
+    public static Bounds ComputerRoom(out Renderer door, out Vector3 inward)
+    {
+        var terminal = Object.FindAnyObjectByType<IntelTerminal>();
+        if (!terminal) throw new InvalidOperationException("Archive computer is missing.");
+        var shell = Object.FindObjectsByType<Renderer>().Where(r => r.name == "entry_3" && r.bounds.Contains(terminal.transform.position))
+            .OrderBy(r => r.bounds.size.sqrMagnitude).FirstOrDefault();
+        if (!shell) throw new InvalidOperationException("Cannot identify the enclosed room around the archive computer.");
+        Transform root = shell.transform;
+        while (root.parent && !root.name.StartsWith("Sci-Fi_door_3_with_animation", StringComparison.OrdinalIgnoreCase)) root = root.parent;
+        door = root.GetComponentsInChildren<Renderer>().FirstOrDefault(r => r.name == "entry_3_door");
+        if (!door) throw new InvalidOperationException("Computer room doorway is missing.");
+        bool planeX = door.bounds.size.x < door.bounds.size.z;
+        inward = planeX ? Vector3.right * Mathf.Sign(terminal.transform.position.x - door.bounds.center.x) :
+            Vector3.forward * Mathf.Sign(terminal.transform.position.z - door.bounds.center.z);
+        Bounds area = shell.bounds;
+        Vector3 min = area.min + new Vector3(.35f, 0, .35f), max = area.max - new Vector3(.35f, 0, .35f);
+        if (planeX) { if (inward.x < 0) max.x = door.bounds.center.x - .45f; else min.x = door.bounds.center.x + .45f; }
+        else { if (inward.z < 0) max.z = door.bounds.center.z - .45f; else min.z = door.bounds.center.z + .45f; }
+        area.SetMinMax(min, max);
+        if (!area.Contains(terminal.transform.position)) throw new InvalidOperationException("Computer is outside the derived server-room interior.");
+        return area;
+    }
+
+    public static void ChooseComputerRoomPost(EliteNavigationGraph graph, Transform owner,
+        out Vector3 position, out Quaternion rotation, out Vector3 approach)
+    {
+        ComputerRoom(out Renderer door, out Vector3 inward);
+        var terminal = Object.FindAnyObjectByType<IntelTerminal>();
+        var nodes = graph.nodes.Where(n => n && graph.ClearSegment(n.position, n.position, owner)).ToArray();
+        if (nodes.Length == 0) throw new InvalidOperationException("No standing clearance in the computer room.");
+        Vector3 entry = door.bounds.center + inward * 1.5f; entry.y = nodes[0].position.y;
+        approach = nodes.OrderBy(n => Vector3.Distance(n.position, entry)).First().position;
+        Vector3 preferred = terminal.transform.position - inward * 2.5f; preferred.y = approach.y;
+        var path = new System.Collections.Generic.List<Vector3>();
+        foreach (var node in nodes.OrderBy(n => Vector3.Distance(n.position, preferred)))
+        {
+            Vector3 delta = approach - node.position; delta.y = 0;
+            if (delta.magnitude < 2 || delta.magnitude > 7) continue;
+            Quaternion facing = Quaternion.LookRotation(delta);
+            Vector3 muzzle = node.position + Vector3.up * 1.35f + facing * new Vector3(.18f, 0, .8f);
+            if (!ElitePerception.Clear(node.position + Vector3.up * 1.55f, approach + Vector3.up * 1.45f, owner, null) ||
+                !ElitePerception.Clear(muzzle, approach + Vector3.up * 1.45f, owner, null)) continue;
+            if (!graph.FindPath(node.position, approach, owner, null, 0, node.position, 16, path, out _, out _)) continue;
+            position = node.position; rotation = facing; return;
+        }
+        throw new InvalidOperationException("No post inside the computer room can see and reach its doorway approach.");
+    }
+
+    [MenuItem("Operation 1989/Elite/7 Place Guard Inside Computer Room")]
+    public static void InstallComputerRoomDefense()
+    {
+        if (Application.isPlaying || SceneManager.GetActiveScene().path != "Assets/army base.unity")
+            throw new InvalidOperationException("Open army base in Edit mode.");
+        var guard = Object.FindAnyObjectByType<EliteGuardController>();
+        if (!guard || !guard.guardPost) throw new InvalidOperationException("The integrated elite guard is required.");
+        Bounds room = ComputerRoom(out Renderer door, out Vector3 inward);
+        Directory.CreateDirectory(Work);
+        EditorSceneManager.SaveScene(guard.gameObject.scene, Work + "/before-computer-room.unity", true);
+        var defense = guard.guardPost.parent;
+        var oldGraph = guard.GetComponent<EliteMovement>().graph;
+        var oldBoundary = oldGraph ? oldGraph.navigationArea : null;
+        var oldCovers = guard.coverPoints;
+        // Match the static collision that WorldInteractionBootstrap installs for this
+        // doorway prefab at runtime. Authoring paths without its walls gives false routes.
+        Transform shellRoot = door.transform;
+        while (shellRoot.parent && !shellRoot.name.StartsWith("Sci-Fi_door_3_with_animation", StringComparison.OrdinalIgnoreCase)) shellRoot = shellRoot.parent;
+        foreach (var mesh in shellRoot.GetComponentsInChildren<MeshFilter>())
+        {
+            if (!mesh.sharedMesh || mesh.name == "entry_3_door") continue;
+            var solids = mesh.GetComponents<Collider>().Where(c => !c.isTrigger).ToArray();
+            foreach (var solid in solids) { Undo.RecordObject(solid, "Match runtime room collision"); solid.enabled = true; }
+            if (solids.Length == 0) Undo.AddComponent<MeshCollider>(mesh.gameObject).sharedMesh = mesh.sharedMesh;
+        }
+        // The surrounding building shell is another runtime-generated obstacle.
+        // Give authoring the same mesh surfaces, including the outer base walls.
+        var building = GameObject.Find("building_1");
+        if (building)
+            foreach (var mesh in building.GetComponentsInChildren<MeshFilter>())
+                if (mesh.sharedMesh && mesh.GetComponent<Renderer>() && room.Intersects(mesh.GetComponent<Renderer>().bounds) &&
+                    mesh.name != "door_middle" && !mesh.GetComponent<Collider>())
+                    Undo.AddComponent<MeshCollider>(mesh.gameObject).sharedMesh = mesh.sharedMesh;
+        var roomRacks = SceneManager.GetActiveScene().GetRootGameObjects().Where(g => g.name == "server" || g.name.StartsWith("server (")).ToArray();
+        foreach (var rack in roomRacks)
+        {
+            var renderers = rack.GetComponentsInChildren<MeshRenderer>();
+            if (renderers.Length == 0) continue;
+            Bounds b = renderers[0].bounds; foreach (var r in renderers) b.Encapsulate(r.bounds);
+            if (!room.Intersects(b)) continue;
+            var proxy = rack.transform.Find("Elite Server Collision");
+            if (!proxy)
+            {
+                proxy = new GameObject("Elite Server Collision").transform; proxy.SetParent(rack.transform, true);
+                Undo.RegisterCreatedObjectUndo(proxy.gameObject, "Match server rack collision"); proxy.gameObject.AddComponent<BoxCollider>();
+            }
+            proxy.SetPositionAndRotation(b.center, Quaternion.identity);
+            proxy.GetComponent<BoxCollider>().size = b.size + Vector3.one * .02f;
+            var obstacle = rack.GetComponent<EliteServerObstacle>();
+            if (!obstacle) obstacle = Undo.AddComponent<EliteServerObstacle>(rack);
+            obstacle.volume = proxy.GetComponent<BoxCollider>();
+            PrefabUtility.RecordPrefabInstancePropertyModifications(obstacle);
+        }
+        Physics.SyncTransforms();
+        float groundY = guard.guardPost.position.y;
+        var boundary = new GameObject("Computer Room Defense Area").AddComponent<BoxCollider>();
+        boundary.transform.SetParent(defense); boundary.transform.position = room.center;
+        boundary.size = room.size; boundary.isTrigger = true;
+        var graph = Grid(defense, room, groundY, .6f); graph.connectionDistance = 1.75f; graph.navigationArea = boundary;
+        var roomNodes = graph.nodes.ToList();
+        foreach (var rack in roomRacks)
+        {
+            var proxy = rack.transform.Find("Elite Server Collision"); if (!proxy) continue;
+            Bounds b = proxy.GetComponent<BoxCollider>().bounds;
+            foreach (float x in new[] { -1f, 0, 1f }) foreach (float z in new[] { -1f, 0, 1f })
+            {
+                if (x == 0 && z == 0) continue;
+                Vector3 p = b.center + new Vector3(x * (b.extents.x + .47f), 0, z * (b.extents.z + .47f)); p.y = groundY;
+                if (!graph.Contains(p) || !graph.ClearSegment(p, p, guard.transform) || roomNodes.Any(n => Vector3.Distance(n.position, p) < .25f)) continue;
+                roomNodes.Add(Marker("Server corner " + roomNodes.Count, graph.transform, p));
+            }
+        }
+        graph.nodes = roomNodes.ToArray();
+        var covers = new System.Collections.Generic.List<EliteCoverPoint>();
+        bool saved = false;
+        try
+        {
+            ChooseComputerRoomPost(graph, guard.transform, out Vector3 position, out Quaternion rotation, out Vector3 approach);
+            var route = new System.Collections.Generic.List<Vector3>();
+            var racks = roomRacks.AsEnumerable();
+            foreach (var rack in racks.OrderBy(g => Vector3.Distance(g.transform.position, position)))
+            {
+                var renderers = rack.GetComponentsInChildren<MeshRenderer>();
+                if (renderers.Length == 0) continue;
+                Bounds b = renderers[0].bounds; foreach (var r in renderers) b.Encapsulate(r.bounds);
+                if (!room.Intersects(b) || b.size.y < 1.35f) continue;
+                foreach (var direction in new[] { Vector3.left, Vector3.right, Vector3.forward, Vector3.back })
+                {
+                    Vector3 p = b.center + Vector3.Scale(direction, b.extents + Vector3.one * .48f); p.y = groundY;
+                    if (covers.Count >= 10 || !graph.Contains(p) || covers.Any(c => Vector3.Distance(c.transform.position, p) < .7f) ||
+                        !graph.ClearSegment(p, p, guard.transform) || ElitePerception.Clear(approach + Vector3.up * 1.45f, p + Vector3.up * 1.3f, guard.transform, null)) continue;
+                    if (!graph.FindPath(position, p, guard.transform, null, 0, position, 16, route, out _, out _)) continue;
+                    covers.Add(Marker("Server cover - " + rack.name, defense, p).gameObject.AddComponent<EliteCoverPoint>());
+                }
+            }
+            if (covers.Count == 0) throw new InvalidOperationException("No protective reachable server cover found inside the actual room.");
+            Undo.RecordObjects(new Object[] { guard, guard.transform, guard.guardPost, guard.GetComponent<EliteMovement>() }, "Place elite inside the computer room");
+            guard.transform.SetPositionAndRotation(position, rotation); guard.guardPost.SetPositionAndRotation(position, rotation);
+            guard.coverPoints = covers.ToArray(); guard.defensiveRadius = 14;
+            guard.GetComponent<EliteMovement>().graph = graph;
+            foreach (var component in new Object[] { guard, guard.transform, guard.GetComponent<EliteMovement>() }) PrefabUtility.RecordPrefabInstancePropertyModifications(component);
+            if (oldGraph) Undo.DestroyObjectImmediate(oldGraph.gameObject);
+            if (oldBoundary) Undo.DestroyObjectImmediate(oldBoundary.gameObject);
+            foreach (var cover in oldCovers) if (cover) Undo.DestroyObjectImmediate(cover.gameObject);
+            EditorSceneManager.MarkSceneDirty(guard.gameObject.scene); EditorSceneManager.SaveScene(guard.gameObject.scene);
+            saved = true;
+            File.WriteAllText(Work + "/computer-room.txt", $"Room {room}\nDoor {door.bounds.center}\nPost {position}\nFacing {rotation.eulerAngles}\nApproach {approach}\nNodes {graph.nodes.Length}\nReachable protective server covers {covers.Count}\nPASS Post, graph and covers inside the enclosed computer room.\n");
+            PlayerSoldierSetup.Capture(approach + Vector3.up * 2, position + Vector3.up * 1.1f, "elite-computer-room");
+        }
+        catch
+        {
+            if (!saved)
+            {
+                foreach (var cover in covers) if (cover) Object.DestroyImmediate(cover.gameObject);
+                Object.DestroyImmediate(graph.gameObject); Object.DestroyImmediate(boundary.gameObject);
+            }
+            throw;
+        }
+    }
+
+    public static void InspectComputerRoomCover()
+    {
+        var guard = Object.FindAnyObjectByType<EliteGuardController>();
+        var graph = guard.GetComponent<EliteMovement>().graph;
+        var senses = guard.GetComponent<ElitePerception>();
+        var lines = new System.Collections.Generic.List<string> { $"Playing {Application.isPlaying} | Actor {guard.transform.position} | Start clear {graph.ClearSegment(guard.transform.position, guard.transform.position, guard.transform)}",
+            $"Free nodes {graph.nodes.Count(n => n && graph.ClearSegment(n.position, n.position, guard.transform))}/{graph.nodes.Length}" };
+        var path = new System.Collections.Generic.List<Vector3>();
+        foreach (var cover in guard.coverPoints)
+        {
+            Vector3 p = cover.transform.position;
+            bool reachable = graph.FindPath(guard.transform.position, p, guard.transform, null, 0, guard.guardPost.position, guard.defensiveRadius, path, out _, out _);
+            lines.Add($"{cover.name} {p} | Clear {graph.ClearSegment(p, p, guard.transform)} | Protected {cover.ProtectedFrom(senses.HasMemory ? senses.LastAim : guard.transform.position + Vector3.up * 1.45f, guard.transform, ~0)} | Reachable {reachable}");
+            foreach (var c in Physics.OverlapCapsule(p + Vector3.up * (graph.radius + .08f), p + Vector3.up * (graph.height - graph.radius), graph.radius, ~0, QueryTriggerInteraction.Ignore))
+                if (!c.transform.IsChildOf(guard.transform)) lines.Add("  Blocker " + c.name + " " + c.bounds);
+        }
+        Directory.CreateDirectory(Work); File.WriteAllLines(Work + "/cover-inspection.txt", lines);
     }
 }

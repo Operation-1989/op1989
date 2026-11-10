@@ -121,6 +121,15 @@ public static class EliteSoldierValidation
                     wall.transform.localScale = new Vector3(3, 3, .5f); Physics.SyncTransforms();
                     Check("A* finds alternative route around obstacle", movement.graph.FindPath(guard.transform.position, Origin + new Vector3(0, .04f, 6), guard.transform, null, 0, guard.transform.position, 10, path, out _, out _));
                     Check("Returned path edges have clearance", path.Count > 1 && Enumerable.Range(1, path.Count - 1).All(i => movement.graph.ClearSegment(path[i - 1], path[i], guard.transform)));
+                    movement.graph.BeginQueryBatch();
+                    movement.graph.FindPath(guard.transform.position, Origin + new Vector3(0, .04f, 6), guard.transform, null, 0, guard.transform.position, 10, path, out _, out _);
+                    movement.graph.EndQueryBatch();
+                    wall.transform.localScale = new Vector3(20, 3, .5f); Physics.SyncTransforms();
+                    movement.graph.BeginQueryBatch();
+                    bool batchBlocked = !movement.graph.FindPath(guard.transform.position, Origin + new Vector3(0, .04f, 6), guard.transform, null, 0, guard.transform.position, 10, path, out _, out _);
+                    movement.graph.EndQueryBatch();
+                    Check("A later query batch detects a newly blocked route", batchBlocked);
+                    wall.transform.localScale = new Vector3(3, 3, .5f); Physics.SyncTransforms();
                     var coverObject = new GameObject("Validation cover"); coverObject.transform.position = Origin + new Vector3(0, .04f, 2);
                     var cover = coverObject.AddComponent<EliteCoverPoint>();
                     Check("Authored cover blocks known threat", cover.ProtectedFrom(Origin + new Vector3(0, 1.5f, 7), guard.transform, ~0));

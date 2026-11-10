@@ -116,15 +116,21 @@ public sealed class EliteGuardController : MonoBehaviour
     {
         if (!movement.graph) return null;
         EliteCoverPoint best = null; float bestCost = float.PositiveInfinity;
-        foreach (var point in coverPoints)
+        movement.graph.BeginQueryBatch();
+        try
         {
-            if (!point || !EliteNavigationGraph.Inside(point.transform.position, post, defensiveRadius) ||
-                !point.ProtectedFrom(perception.LastAim, transform, perception.obstacleLayers)) continue;
-            if (movement.graph.FindPath(transform.position, point.transform.position, transform, perception.LastAim, exposurePenalty,
-                post, defensiveRadius, candidatePath, out float cost, out _) && cost < bestCost)
-            { best = point; bestCost = cost; }
+            foreach (var point in coverPoints)
+            {
+                if (!point || Vector3.Distance(transform.position, point.transform.position) >= bestCost ||
+                    !EliteNavigationGraph.Inside(point.transform.position, post, defensiveRadius) ||
+                    !point.ProtectedFrom(perception.LastAim, transform, perception.obstacleLayers)) continue;
+                if (movement.graph.FindPath(transform.position, point.transform.position, transform, perception.LastAim, exposurePenalty,
+                    post, defensiveRadius, candidatePath, out float cost, out _) && cost < bestCost)
+                { best = point; bestCost = cost; }
+            }
+            return best;
         }
-        return best;
+        finally { movement.graph.EndQueryBatch(); }
     }
 
     void ChooseSearchPoint()

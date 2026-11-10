@@ -12,6 +12,7 @@ The chamber is the existing control room containing the archive computer. This f
 | `EliteNavigationGraph` | Authored ground points, capsule-validated edges/endpoints, inspectable A*, path cost and expanded-node count. |
 | `EliteMovement` | Sole locomotion writer: CharacterController, acceleration, rotation, path following, block/stall replanning, and actual-motion animation. |
 | `EliteCoverPoint` | Authored standing position, verified protection from the last observed threat. |
+| `EliteServerObstacle` | Links an existing rack to its solid enclosing collider so the environment bootstrap does not generate separate colliders for every tiny mesh part. |
 
 The existing `CombatHealth` and `RifleWeapon` remain the damage and weapon interfaces. The elite detects damage by health changes; damage gives no attacker coordinates. It stops on death and detects restoration through `CombatHealth.Restore()`. The existing health component supplies its fall-over presentation; no death, reload, crouch, or cover clips are invented.
 
@@ -35,6 +36,8 @@ Edges cost distance in metres plus `max(0, exposurePenalty) × exposure(destinat
 
 Nodes have a maximum connection distance. Capsule overlaps and casts validate standing space, the complete edge, and the destination while ignoring the guard's colliders and triggers. Exact start/goal connectors receive the same checks; a nearby point across a wall cannot be selected by snapping. Invalid indices, nonfinite positions, same-position goals, disconnected graphs, and blocked edges have explicit outcomes. Movement checks the next segment and step, replans after goal changes, blockages, or stalls, and rate-limits failed queries. A failed behavior returns toward the post; if that route also fails, the guard stops safely and retries.
 
+Cover candidates evaluated synchronously during one decision share a short-lived collision/exposure query batch. Exposure is also computed at most once per node within each search. The batch is discarded before movement; later decisions and movement checks query live geometry. The blocked-route regression checks that a later batch detects a newly introduced wall. This optimization changes query reuse, not the A* cost or heuristic.
+
 Threat exposure uses only the current visible observation or decaying memory. No hidden live target position is supplied to navigation, cover, aiming, or search.
 
 ## Setup and tuning
@@ -52,22 +55,29 @@ Enable `debugOverlay` on the guard for action scores, eligibility, visibility, m
 
 ## Validation and practical limits
 
-Verified in this implementation: all 26 automatic Unity Play Mode checks passed, including the newly blocked route and embedded-muzzle cases. All 15 additional standalone utility/FOV/A* logic checks passed. The complete runtime/editor source compilation passed with zero errors. Reports are in `Temp/EliteSoldier/validation.txt` and `Temp/EliteSoldier/integration.txt`.
+Verified in the final room implementation: all **27 isolated Unity Play Mode checks** and **14 actual computer-room checks** passed, including a newly blocked route between query batches, embedded-muzzle safety, real A* server detours, wounded movement into cover, room containment, and return-to-post. The earlier 15 standalone utility/FOV/A* logic checks also passed. The complete runtime/editor source compilation passed. Reports are in `Temp/EliteSoldier/validation.txt` and `Temp/EliteSoldier/post-validation.txt`.
 
-The main scene now contains **Control Room Elite Defense**, a guard post at **(-9.55, 0.07, 20.11)**, **242** ground nodes, and **24** cover candidates around existing objects. The pre-integration editor scene, including its previous unsaved changes, was saved as `Temp/EliteSoldier/before-integration.unity`. PatrolSoldier and the shared patrol/player controllers were verified unchanged.
+The guard is placed inside the **enclosed computer/server room**, rather than the building's central hallway. That room is identified by the `entry_3` architectural mesh containing the archive computer and its own `entry_3_door` doorway; the building-wide audio zone is not used as the physical room boundary. The post is near the computer, facing the doorway from inside. The graph's optional `navigationArea` BoxCollider constrains nodes, path endpoints, and movement segments to the room's XZ footprint. Existing server racks provide standing cover. PatrolSoldier and its shared assets are preserved.
+
+**Operation 1989 → Elite → 5 Repair Entrance Guard Post** repositions an existing guard using those checks and backs up the scene to `Temp/EliteSoldier/before-post-repair.unity`. **6 Validate Main Scene Entrance Reaction** runs the actual army-base scene after runtime colliders are installed, temporarily places the existing player on the entrance approach, and checks FOV, detection, combat action, firing, and damage. It exits Play Mode and restores the editor scene; results go to `Temp/EliteSoldier/post-validation.txt`. This supplements the isolated tests, which cannot validate placement in the main map.
+
+**7 Place Guard Inside Computer Room** backs up the scene to `Temp/EliteSoldier/before-computer-room.unity`, matches the room/building collision to the runtime environment setup, and rebuilds a dense graph with 0.6m spacing plus explicit rack-corner nodes. It selects an interior post with eye/muzzle visibility and a route to the room's own doorway approach, then authors protective reachable markers around the actual server racks. Rack collider volumes preserve physical cover while avoiding thousands of redundant generated part colliders. Fresh integration through command 4 also applies this room setup automatically.
+
+The saved post is **(-7.41, 0.07, 24.34)**, with **148 nodes** and **9 cover candidates**. In the runtime entrance scenario, **4 cover positions** were protective and reachable, all requiring valid obstacle detours; the guard revalidates eligibility against its current observation. The 13 racks used 39 colliders in that test. Current placement counts are written to `Temp/EliteSoldier/computer-room.txt`; a rendered preview is written to `Temp/PlayerSoldier/elite-computer-room.png`. With a room boundary assigned, command 6 verifies server-cover paths, obstacle detours, actual wounded-guard movement into cover, and returning to the computer-side post after memory expires. Its temporary player health increase and damage are confined to Play Mode.
+
+The earlier building-entrance reaction checks have been superseded by the enclosed-room checks above. The room test waits for scaled gameplay time and gameplay frames, with a wall-clock timeout, so startup stalls do not consume the utility commitment period. Door interaction during a normal mission, search behavior in different player escape directions, combat difficulty, and animation appearance still benefit from manual playtesting.
 
 The automated checks cover FOV/range/occlusion, hidden movement and memory decay, utility priority and commitment, A* cost and failure cases, protective/reachable cover, obstacle detours, real firing and occlusion, pursuit limit, returning to post/facing, damage, death, and health restoration. Check `validation.txt` for actual PASS/FAIL outcomes; having the harness in the repository is not evidence that its Play Mode checks ran.
 
 Manual checks are still needed for main-scene door movement, room collision clearances, animation/muzzle appearance, tuning combat difficulty, and scene reload/restart. The graph supports a small planar floor, not stairs, jumping, or multi-storey navigation. Cover is standing cover; the soldier can wait behind it but does not animate crouching, blind-fire, or a dedicated peek. Search tries the last observation and eight surrounding reachable points. Exposure is a physics-ray estimate of the current environment from a remembered threat position, not a prediction of the player's hidden movement.
 
-## Suggested commits (user executes)
+## Commit guidance
 
-All changes are left unstaged on `feature/elite-soldier`. Review each group and commit it yourself. Avoid `git add .` because the repository already contains extensive unrelated changes.
+The base feature was introduced in `fb5b0c3` on `feature/elite-soldier`. The computer-room placement and navigation refinements cover the groups below. Avoid `git add .` because the repository contains extensive unrelated changes.
 
-1. `feat(elite): add perception memory and utility decisions` — Elite folder metadata, `ElitePerception.cs`, `EliteUtility.cs`, and their `.meta` files.
-2. `feat(elite): add clearance-aware custom A-star navigation` — `EliteNavigationGraph.cs`, `EliteMovement.cs`, and metadata.
-3. `feat(elite): add defensive guard cover and combat` — `EliteGuardController.cs`, `EliteCoverPoint.cs`, and metadata.
-4. `feat(elite): add soldier assets test scene and validation` — elite prefab/controller/test scene and metadata; `EliteSoldierSetup.cs`, `EliteSoldierValidation.cs`, and metadata; this document. Review the earlier commits as component building blocks; the complete Unity feature is assembled by this commit.
-5. `feat(elite): place guard in control room using existing cover` — only the elite-related changes to `Assets/army base.unity`. Use `git add -p -- "Assets/army base.unity"` and inspect every hunk because this file had pre-existing work. Include only any new metadata attributable to this feature.
+Logical review groups:
 
-Do not commit anything under Temp, Library, or Logs. Before each commit inspect `git diff --cached --stat` and `git diff --cached`. The setup/validation scripts refer to the runtime components, so source-only commits 1–3 are logical building blocks; compile the complete group before reviewing the finished feature.
+1. `feat(elite): constrain navigation to room and batch cover queries` — `EliteNavigationGraph.cs`, `EliteGuardController.cs`, `EliteServerObstacle.cs` and metadata, `WorldInteractionBootstrap.cs`, and the updated isolated regression checks.
+2. `fix(elite): place guard beside computer with reachable server cover` — the elite-related changes to `Assets/army base.unity`, `EliteSoldierSetup.cs`, `EliteGuardPostValidation.cs` and metadata, and this document. Review scene hunks carefully because this file also contains pre-existing work.
+
+Do not commit anything under Temp, Library, or Logs. Before each commit inspect `git diff --cached --stat` and `git diff --cached`.

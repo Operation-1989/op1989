@@ -522,6 +522,11 @@ namespace Operation1989.Interaction.Environment
 
         private static void AddEnvironmentCollider(Transform transform, FirstPersonController player)
         {
+            // A room-authored rack volume already encloses its detailed mesh parts.
+            // Avoid generating thousands of redundant connector/switch colliders.
+            var server = transform.GetComponentInParent<EliteServerObstacle>();
+            if (server != null && server.ProvidesCollision)
+                return;
             if (transform.GetComponent<Collider>() != null ||
                 transform.GetComponent<DoorController>() != null ||
                 IsMainBuildingDoorMesh(transform) ||
