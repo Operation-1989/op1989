@@ -72,7 +72,7 @@ public sealed class CombatHud
         if (scoped) DrawScope(width, height);
         var card = new Rect(width - 344, height - 104, 320, 80);
         MissionHudStyle.Card(card);
-        GUI.Label(new Rect(card.x + 20, card.y + 14, 200, 18), "ASSAULT RIFLE", eyebrow);
+        GUI.Label(new Rect(card.x + 20, card.y + 14, 200, 18), health.IsRegenerating ? "RECOVERING" : "ASSAULT RIFLE", eyebrow);
         GUI.Label(new Rect(card.x + 20, card.y + 36, 210, 24), "LMB Fire / RMB " + (player && player.toggleScope ? "Toggle scope" : "Hold scope"), hint);
         GUI.Label(new Rect(card.xMax - 96, card.y + 22, 76, 25), $"{health.Current:0} HP", healthText);
         var bar = new Rect(card.x + 20, card.yMax - 12, card.width - 40, 3);
