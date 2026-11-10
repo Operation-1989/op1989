@@ -76,11 +76,13 @@ public sealed class CombatHealth : MonoBehaviour
         if(!isPlayer || !Dead)return;
         Restore();
         var intro=FindAnyObjectByType<IntroTruckSequence>();
-        if(intro)intro.RespawnInsideGate();
+        if(intro)intro.RespawnAtCurrentCheckpoint();
         else
         {
             var cc=GetComponent<CharacterController>();if(cc)cc.enabled=false;
-            transform.SetPositionAndRotation(spawn,rotation);
+            var checkpoint=GetComponent<PlayerCheckpointState>();
+            transform.SetPositionAndRotation(checkpoint && checkpoint.HasCheckpoint ? checkpoint.RespawnPosition : spawn,
+                checkpoint && checkpoint.HasCheckpoint ? checkpoint.RespawnRotation : rotation);
             if(cc)cc.enabled=true;
             GetComponent<FirstPersonController>().ResetLook();
             GetComponent<FirstPersonController>().enabled=true;

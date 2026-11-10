@@ -133,6 +133,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void BeginSequence()
     {
+        player.GetComponent<PlayerCheckpointState>()?.Clear();
         elapsed = 0;
         currentSpeed = 0;
         targetPoint = 1;
@@ -229,12 +230,26 @@ public sealed class IntroTruckSequence : MonoBehaviour
     public void RespawnInsideGate()
     {
         if (!Initialize()) return;
+        player.GetComponent<PlayerCheckpointState>()?.Clear();
+        RespawnAt(RespawnPosition, Quaternion.LookRotation(insideDirection.normalized));
+    }
+
+    public void RespawnAtCurrentCheckpoint()
+    {
+        if (!Initialize()) return;
+        var checkpoint = player.GetComponent<PlayerCheckpointState>();
+        if (checkpoint && checkpoint.HasCheckpoint) RespawnAt(checkpoint.RespawnPosition, checkpoint.RespawnRotation);
+        else RespawnInsideGate();
+    }
+
+    void RespawnAt(Vector3 position, Quaternion rotation)
+    {
         if (intelMission) intelMission.ResetForCheckpoint();
         SetInput(false);
         var controller = player.GetComponent<CharacterController>();
         bool wasEnabled = controller && controller.enabled;
         if (controller) controller.enabled = false;
-        player.SetPositionAndRotation(RespawnPosition, Quaternion.LookRotation(insideDirection.normalized));
+        player.SetPositionAndRotation(position, rotation);
         playerCamera.transform.localRotation = cameraStartRotation;
         var movement = player.GetComponent<FirstPersonController>();
         if (movement) movement.ResetLook();

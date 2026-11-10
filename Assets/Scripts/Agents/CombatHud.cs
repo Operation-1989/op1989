@@ -80,11 +80,15 @@ public sealed class CombatHud
         MissionHudStyle.Fill(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(health.Current / health.maximumHealth), bar.height), MissionHudStyle.Accent);
         if (health.Dead)
         {
+            var checkpoint = health.GetComponent<PlayerCheckpointState>();
+            bool buildingCheckpoint = checkpoint && checkpoint.HasCheckpoint;
             var death = new Rect((width - 440) / 2, (height - 204) / 2, 440, 204);
             MissionHudStyle.Card(death);
             GUI.Label(new Rect(death.x + 20, death.y + 18, 395, 18), "CHECKPOINT", eyebrow);
-            GUI.Label(new Rect(death.x + 20, death.y + 44, 395, 30), "Regroup inside the gate", heading);
-            GUI.Label(new Rect(death.x + 20, death.y + 88, 395, 52), "You were shot. You will return inside the main gate with full health.", body);
+            GUI.Label(new Rect(death.x + 20, death.y + 44, 395, 30), buildingCheckpoint ? "Return to checkpoint" : "Regroup inside the gate", heading);
+            GUI.Label(new Rect(death.x + 20, death.y + 88, 395, 52), buildingCheckpoint ?
+                "You were shot. You will return to " + checkpoint.DisplayName + " with full health." :
+                "You were shot. You will return inside the main gate with full health.", body);
             GUI.Label(new Rect(death.x + 20, death.yMax - 35, 395, 22), $"Respawning in {Mathf.CeilToInt(secondsLeft)}s   /   R  Respawn now", hint);
         }
         else if (!scoped && Cursor.lockState == CursorLockMode.Locked)

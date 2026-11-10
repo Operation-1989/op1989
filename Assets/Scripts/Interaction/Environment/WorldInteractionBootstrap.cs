@@ -516,6 +516,10 @@ namespace Operation1989.Interaction.Environment
                 name.IndexOf("opening", System.StringComparison.OrdinalIgnoreCase) < 0)
                 return;
 
+            // Gameplay checkpoint volumes do not obstruct a passage and must stay active.
+            if (transform.GetComponent<PlayerCheckpoint>() != null)
+                return;
+
             foreach (var collider in transform.GetComponents<Collider>())
                 collider.enabled = false;
         }
