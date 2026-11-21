@@ -210,6 +210,7 @@ namespace Operation1989.AI.Drone
             GUILayout.Label($"<b>Visual:</b> {(perception.CanSeePlayer ? "<color=red>SPOTTED</color>" : "<color=green>CLEAR</color>")}" +
                             $" | <b>Cover:</b> {(perception.IsPlayerInCover ? "<color=yellow>IN COVER</color>" : "NO")}" +
                             $" | <b>LKP Confidence:</b> {perception.MemoryConfidence:P0}");
+            GUILayout.Label($"<b>Optical Status:</b> <color=cyan>{perception.Diagnostics}</color>");
 
             GUILayout.Label($"<b>A* Nodes Explored:</b> {navGraph.LastNodesExploredCount}" +
                             $" | <b>Target Node:</b> {(currentGoalNode >= 0 && currentGoalNode < navGraph.Nodes.Count ? navGraph.Nodes[currentGoalNode].label : "None")}");

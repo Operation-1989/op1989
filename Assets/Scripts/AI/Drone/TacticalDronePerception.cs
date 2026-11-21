@@ -21,19 +21,19 @@ namespace Operation1989.AI.Drone
 
         [Header("Optical Vision Parameters")]
         [Tooltip("Maximum sight range for visual detection in meters.")]
-        [Range(20f, 120f)] [SerializeField] private float visualRange = 65f;
+        [Range(20f, 200f)] [SerializeField] private float visualRange = 120f;
         [Tooltip("Horizontal Field of View angle in degrees.")]
-        [Range(45f, 160f)] [SerializeField] private float fieldOfView = 110f;
+        [Range(45f, 180f)] [SerializeField] private float fieldOfView = 120f;
         [Tooltip("Downward ground coverage radius directly beneath drone in meters.")]
-        [Range(10f, 50f)] [SerializeField] private float downwardConeRadius = 30f;
+        [Range(10f, 80f)] [SerializeField] private float downwardConeRadius = 45f;
         [Tooltip("Effective combat firing distance.")]
-        [Range(10f, 60f)] [SerializeField] private float combatRange = 35f;
+        [Range(10f, 80f)] [SerializeField] private float combatRange = 45f;
 
         [Header("Acoustic Sensor Parameters")]
         [Tooltip("Radius within which gunshots can be heard in meters.")]
-        [Range(20f, 150f)] [SerializeField] private float acousticGunshotRange = 75f;
+        [Range(20f, 150f)] [SerializeField] private float acousticGunshotRange = 85f;
         [Tooltip("Radius within which rapid player footsteps can be heard in meters.")]
-        [Range(5f, 35f)] [SerializeField] private float acousticFootstepRange = 20f;
+        [Range(5f, 35f)] [SerializeField] private float acousticFootstepRange = 25f;
 
         [Header("Memory & Decay")]
         [Tooltip("How long the drone remembers the player after losing line-of-sight (seconds).")]
@@ -48,6 +48,8 @@ namespace Operation1989.AI.Drone
         public Vector3 EstimatedVelocity { get; private set; }
         public float MemoryConfidence { get; private set; }
         public float TimeSinceLastSeen => Time.time - lastSeenTimestamp;
+        public string Diagnostics { get; private set; } = "Initializing";
+        public float DistanceToPlayer { get; private set; }
 
         private float lastSeenTimestamp = -100f;
         private float lastGunshotTimestamp = -100f;
@@ -114,6 +116,7 @@ namespace Operation1989.AI.Drone
                 CanSeePlayer = false;
                 IsPlayerInCover = false;
                 IsInShootingRange = false;
+                Diagnostics = "No Player Target Found in Scene";
                 return;
             }
 
@@ -124,6 +127,7 @@ namespace Operation1989.AI.Drone
                 CanSeePlayer = false;
                 IsPlayerInCover = false;
                 IsInShootingRange = false;
+                Diagnostics = "Target Player Dead";
                 return;
             }
 
@@ -131,12 +135,14 @@ namespace Operation1989.AI.Drone
             Vector3 targetAimPoint = targetPlayer.position + Vector3.up * 1.0f;
             Vector3 delta = targetAimPoint - eyeOrigin;
             float distance = delta.magnitude;
+            DistanceToPlayer = distance;
 
             // Optical check 1: Supply truck stealth zone concealment
             if (SupplyTruckStealthZone.IsPlayerConcealed)
             {
                 CanSeePlayer = false;
                 IsPlayerInCover = true;
+                Diagnostics = "Concealed in Supply Truck Stealth Zone";
                 return;
             }
 
@@ -146,6 +152,7 @@ namespace Operation1989.AI.Drone
                 CanSeePlayer = false;
                 IsPlayerInCover = false;
                 IsInShootingRange = false;
+                Diagnostics = $"Out of Range ({distance:F0}m > {visualRange:F0}m)";
                 return;
             }
 
@@ -162,29 +169,41 @@ namespace Operation1989.AI.Drone
             if (!withinVisionAngle)
             {
                 CanSeePlayer = false;
+                Diagnostics = $"Outside Vision Cone (Angle: {angleToTarget:F0}°, Ground Offset: {horizontalOffset.magnitude:F0}m > {downwardConeRadius:F0}m)";
                 return;
             }
 
             // Optical check 4: Physical Line-of-Sight RaycastAll (ignores drone's own colliders)
             bool unobstructed = true;
             bool hitCover = false;
+            string obstructionName = "";
 
             var hits = Physics.RaycastAll(eyeOrigin, delta.normalized, distance, obstacleLayers, QueryTriggerInteraction.Ignore);
             Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
 
             foreach (var h in hits)
             {
+                // Ignore triggers
+                if (h.collider != null && h.collider.isTrigger) continue;
+
                 // Ignore drone's own colliders and visuals
                 if (h.transform == transform || h.transform.IsChildOf(transform)) continue;
+                if (h.transform.name.IndexOf("Drone", StringComparison.OrdinalIgnoreCase) >= 0) continue;
 
                 // If hit target player or child of target player, line of sight reached!
-                if (h.transform == targetPlayer || h.transform.IsChildOf(targetPlayer))
+                bool isTargetHit = (h.transform == targetPlayer) || 
+                                   h.transform.IsChildOf(targetPlayer) || 
+                                   (h.transform.root == targetPlayer.root) || 
+                                   h.collider.CompareTag("Player");
+
+                if (isTargetHit)
                 {
                     break;
                 }
 
                 // If hit an obstacle before reaching the player:
                 unobstructed = false;
+                obstructionName = h.collider.name;
                 var barricade = h.collider.GetComponentInParent<PushableBarricade>();
                 if (barricade != null || h.collider.gameObject.layer == 10)
                 {
@@ -197,6 +216,7 @@ namespace Operation1989.AI.Drone
             {
                 CanSeePlayer = true;
                 IsPlayerInCover = false;
+                Diagnostics = $"Spotted! (Distance: {distance:F0}m)";
                 lastSeenTimestamp = Time.time;
                 LastKnownPosition = targetPlayer.position;
 
@@ -210,6 +230,7 @@ namespace Operation1989.AI.Drone
             {
                 CanSeePlayer = false;
                 IsPlayerInCover = hitCover;
+                Diagnostics = hitCover ? $"Target Behind Barricade Cover ({obstructionName})" : $"Occluded by [{obstructionName}]";
             }
 
             IsInShootingRange = CanSeePlayer && (distance <= combatRange);
