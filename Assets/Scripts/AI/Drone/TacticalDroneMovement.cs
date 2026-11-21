@@ -50,6 +50,23 @@ namespace Operation1989.AI.Drone
         {
             navGraph = GetComponent<TacticalDroneNavigationGraph>();
             damageHandler = GetComponent<DroneDamage>();
+            if (rotorBlades == null || rotorBlades.Length == 0)
+            {
+                var bladesTrans = transform.Find("RUKO Drone Visual/Blades");
+                if (bladesTrans)
+                {
+                    var list = new List<Transform>();
+                    if (bladesTrans.childCount > 0)
+                    {
+                        for (int i = 0; i < bladesTrans.childCount; i++) list.Add(bladesTrans.GetChild(i));
+                    }
+                    else
+                    {
+                        list.Add(bladesTrans);
+                    }
+                    rotorBlades = list.ToArray();
+                }
+            }
         }
 
         public void SetPath(List<Vector3> path)
