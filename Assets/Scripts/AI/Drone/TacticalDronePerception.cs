@@ -8,7 +8,7 @@ namespace Operation1989.AI.Drone
 {
     /// <summary>
     /// Multi-modal sensory perception system for the Tactical Recon Drone.
-    /// Combines dual-cone optical sight (forward + downward spotlight) with acoustic gunfire/footstep hearing,
+    /// Combines dual-cone optical sight (forward + downward spotlight cone) with acoustic gunfire/footstep hearing,
     /// obstacle/barricade occlusion checking, and temporal memory decay.
     /// Asserts and retracts facts directly into KnowledgeBase.
     /// </summary>
@@ -17,24 +17,23 @@ namespace Operation1989.AI.Drone
     {
         [Header("Target & Reference")]
         [SerializeField] private Transform targetPlayer;
-        [SerializeField] private LayerMask playerLayer = 1 << 8;
-        [SerializeField] private LayerMask obstacleLayers = (1 << 0) | (1 << 10); // Default + Barricades
+        [SerializeField] private LayerMask obstacleLayers = ~0; // All layers except triggers
 
         [Header("Optical Vision Parameters")]
         [Tooltip("Maximum sight range for visual detection in meters.")]
-        [Range(10f, 100f)] [SerializeField] private float visualRange = 45f;
+        [Range(20f, 120f)] [SerializeField] private float visualRange = 65f;
         [Tooltip("Horizontal Field of View angle in degrees.")]
-        [Range(30f, 180f)] [SerializeField] private float fieldOfView = 90f;
-        [Tooltip("Downward conical scan radius directly beneath drone.")]
-        [Range(2f, 25f)] [SerializeField] private float downwardConeRadius = 8f;
+        [Range(45f, 160f)] [SerializeField] private float fieldOfView = 110f;
+        [Tooltip("Downward ground coverage radius directly beneath drone in meters.")]
+        [Range(10f, 50f)] [SerializeField] private float downwardConeRadius = 30f;
         [Tooltip("Effective combat firing distance.")]
-        [Range(5f, 50f)] [SerializeField] private float combatRange = 25f;
+        [Range(10f, 60f)] [SerializeField] private float combatRange = 35f;
 
         [Header("Acoustic Sensor Parameters")]
         [Tooltip("Radius within which gunshots can be heard in meters.")]
-        [Range(20f, 150f)] [SerializeField] private float acousticGunshotRange = 70f;
+        [Range(20f, 150f)] [SerializeField] private float acousticGunshotRange = 75f;
         [Tooltip("Radius within which rapid player footsteps can be heard in meters.")]
-        [Range(5f, 30f)] [SerializeField] private float acousticFootstepRange = 16f;
+        [Range(5f, 35f)] [SerializeField] private float acousticFootstepRange = 20f;
 
         [Header("Memory & Decay")]
         [Tooltip("How long the drone remembers the player after losing line-of-sight (seconds).")]
@@ -59,11 +58,7 @@ namespace Operation1989.AI.Drone
 
         private void Awake()
         {
-            if (!targetPlayer)
-            {
-                var foundPlayer = GameObject.FindGameObjectWithTag("Player");
-                if (foundPlayer) targetPlayer = foundPlayer.transform;
-            }
+            FindPlayerTarget();
         }
 
         private void OnEnable()
@@ -82,8 +77,28 @@ namespace Operation1989.AI.Drone
             targetPlayer = player;
         }
 
+        private void FindPlayerTarget()
+        {
+            if (targetPlayer) return;
+
+            var found = GameObject.FindGameObjectWithTag("Player");
+            if (found)
+            {
+                targetPlayer = found.transform;
+                return;
+            }
+
+            var fpc = FindAnyObjectByType<FirstPersonController>();
+            if (fpc)
+            {
+                targetPlayer = fpc.transform;
+            }
+        }
+
         private void Update()
         {
+            if (!targetPlayer) FindPlayerTarget();
+
             UpdateSensoryInputs();
             UpdateMemoryDecay();
             SynchronizeWithKnowledgeBase();
@@ -95,6 +110,16 @@ namespace Operation1989.AI.Drone
         private void UpdateSensoryInputs()
         {
             if (!targetPlayer)
+            {
+                CanSeePlayer = false;
+                IsPlayerInCover = false;
+                IsInShootingRange = false;
+                return;
+            }
+
+            // Check if player is dead
+            var health = targetPlayer.GetComponent<CombatHealth>();
+            if (health && health.Dead)
             {
                 CanSeePlayer = false;
                 IsPlayerInCover = false;
@@ -124,14 +149,14 @@ namespace Operation1989.AI.Drone
                 return;
             }
 
-            // Optical check 3: Angle Check (Forward Vision Cone OR Downward Spotter Cone)
+            // Optical check 3: Angle Check (Forward Vision Cone OR Downward Ground Cone)
             float angleToTarget = Vector3.Angle(transform.forward, delta);
             bool insideForwardCone = angleToTarget <= (fieldOfView * 0.5f);
-            
-            // Downward cone check: directly underneath drone
+
+            // Downward cone check: directly underneath drone in ground radius
             Vector3 horizontalOffset = targetPlayer.position - transform.position;
             horizontalOffset.y = 0;
-            bool insideDownwardCone = horizontalOffset.magnitude <= downwardConeRadius && (eyeOrigin.y > targetPlayer.position.y);
+            bool insideDownwardCone = (horizontalOffset.magnitude <= downwardConeRadius) && (eyeOrigin.y > targetPlayer.position.y);
 
             bool withinVisionAngle = insideForwardCone || insideDownwardCone;
             if (!withinVisionAngle)
@@ -140,35 +165,51 @@ namespace Operation1989.AI.Drone
                 return;
             }
 
-            // Optical check 4: Physical Line-of-Sight Raycast & Cover Detection
-            if (Physics.Raycast(eyeOrigin, delta.normalized, out RaycastHit hit, distance + 0.5f, obstacleLayers | playerLayer, QueryTriggerInteraction.Ignore))
-            {
-                bool hitPlayer = hit.transform == targetPlayer || hit.transform.IsChildOf(targetPlayer);
-                if (hitPlayer)
-                {
-                    CanSeePlayer = true;
-                    IsPlayerInCover = false;
-                    lastSeenTimestamp = Time.time;
-                    LastKnownPosition = targetPlayer.position;
+            // Optical check 4: Physical Line-of-Sight RaycastAll (ignores drone's own colliders)
+            bool unobstructed = true;
+            bool hitCover = false;
 
-                    // Estimate target velocity
-                    if (Time.deltaTime > 0.0001f)
-                    {
-                        EstimatedVelocity = (targetPlayer.position - previousTargetPos) / Time.deltaTime;
-                    }
-                    previousTargetPos = targetPlayer.position;
-                }
-                else
+            var hits = Physics.RaycastAll(eyeOrigin, delta.normalized, distance, obstacleLayers, QueryTriggerInteraction.Ignore);
+            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+            foreach (var h in hits)
+            {
+                // Ignore drone's own colliders and visuals
+                if (h.transform == transform || h.transform.IsChildOf(transform)) continue;
+
+                // If hit target player or child of target player, line of sight reached!
+                if (h.transform == targetPlayer || h.transform.IsChildOf(targetPlayer))
                 {
-                    // Obstructed by obstacle or dynamic cover (e.g., PushableBarricade)
-                    CanSeePlayer = false;
-                    var barricade = hit.collider.GetComponentInParent<PushableBarricade>();
-                    IsPlayerInCover = barricade != null;
+                    break;
                 }
+
+                // If hit an obstacle before reaching the player:
+                unobstructed = false;
+                var barricade = h.collider.GetComponentInParent<PushableBarricade>();
+                if (barricade != null || h.collider.gameObject.layer == 10)
+                {
+                    hitCover = true;
+                }
+                break;
+            }
+
+            if (unobstructed)
+            {
+                CanSeePlayer = true;
+                IsPlayerInCover = false;
+                lastSeenTimestamp = Time.time;
+                LastKnownPosition = targetPlayer.position;
+
+                if (Time.deltaTime > 0.0001f)
+                {
+                    EstimatedVelocity = (targetPlayer.position - previousTargetPos) / Time.deltaTime;
+                }
+                previousTargetPos = targetPlayer.position;
             }
             else
             {
                 CanSeePlayer = false;
+                IsPlayerInCover = hitCover;
             }
 
             IsInShootingRange = CanSeePlayer && (distance <= combatRange);
@@ -177,7 +218,6 @@ namespace Operation1989.AI.Drone
             if (!CanSeePlayer && distance <= acousticFootstepRange)
             {
                 var fpc = targetPlayer.GetComponent<FirstPersonController>();
-                // Player running/moving fast near drone generates acoustic footsteps
                 if (fpc != null && (targetPlayer.position - previousTargetPos).magnitude / Mathf.Max(Time.deltaTime, 0.001f) > 3.0f)
                 {
                     LastKnownPosition = targetPlayer.position;
