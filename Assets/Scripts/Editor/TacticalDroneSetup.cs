@@ -270,6 +270,12 @@ namespace Operation1989.EditorScripts
                     if (perception) perception.SetTargetPlayer(player.transform);
                 }
 
+                var navGraph = drone.GetComponent<TacticalDroneNavigationGraph>();
+                if (navGraph)
+                {
+                    navGraph.GenerateDefaultAirspaceNodes();
+                }
+
                 EditorSceneManager.MarkSceneDirty(scene);
                 EditorSceneManager.SaveScene(scene);
                 Debug.Log("[Tactical Drone Setup] Successfully integrated Tactical Recon Drone into army base scene!");
