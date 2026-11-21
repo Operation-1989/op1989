@@ -68,6 +68,11 @@ namespace Operation1989.AI.Drone
             SetSearchlightColor(patrolColor);
         }
 
+        public void SetSearchlightForTesting(Light light)
+        {
+            searchlight = light;
+        }
+
         public void SetAimTarget(Vector3 aimPos, bool active)
         {
             targetAimPosition = aimPos;
@@ -76,7 +81,13 @@ namespace Operation1989.AI.Drone
 
         public void SetSearchlightState(InferredAction action)
         {
-            if (!searchlight) return;
+            if (!searchlight)
+            {
+                var searchlightTrans = transform.Find("TacticalSearchlight");
+                if (searchlightTrans) searchlight = searchlightTrans.GetComponent<Light>();
+                if (!searchlight) searchlight = GetComponentInChildren<Light>();
+                if (!searchlight) return;
+            }
 
             switch (action)
             {

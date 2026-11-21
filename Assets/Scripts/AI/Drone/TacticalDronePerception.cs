@@ -10,7 +10,7 @@ namespace Operation1989.AI.Drone
     /// Multi-modal sensory perception system for the Tactical Recon Drone.
     /// Combines dual-cone optical sight (forward + downward spotlight cone) with acoustic gunfire/footstep hearing,
     /// obstacle/barricade occlusion checking, and temporal memory decay.
-    /// Asserts and retracts facts directly into KnowledgeBase.
+    /// Respects military base boundary fences and cutscene states.
     /// </summary>
     [DisallowMultipleComponent]
     public class TacticalDronePerception : MonoBehaviour
@@ -21,13 +21,17 @@ namespace Operation1989.AI.Drone
 
         [Header("Optical Vision Parameters")]
         [Tooltip("Maximum sight range for visual detection in meters.")]
-        [Range(20f, 300f)] [SerializeField] private float visualRange = 250f;
+        [Range(20f, 200f)] [SerializeField] private float visualRange = 85f;
         [Tooltip("Horizontal Field of View angle in degrees.")]
-        [Range(45f, 180f)] [SerializeField] private float fieldOfView = 130f;
+        [Range(45f, 180f)] [SerializeField] private float fieldOfView = 110f;
         [Tooltip("Downward ground coverage radius directly beneath drone in meters.")]
-        [Range(10f, 100f)] [SerializeField] private float downwardConeRadius = 55f;
+        [Range(10f, 80f)] [SerializeField] private float downwardConeRadius = 35f;
         [Tooltip("Effective combat firing distance.")]
-        [Range(10f, 100f)] [SerializeField] private float combatRange = 60f;
+        [Range(10f, 80f)] [SerializeField] private float combatRange = 35f;
+
+        [Header("Perimeter Constraints")]
+        [Tooltip("Z coordinate of the base entrance gate. Targets behind this boundary are outside the base.")]
+        [SerializeField] private float entranceGateZBoundary = -88f;
 
         [Header("Acoustic Sensor Parameters")]
         [Tooltip("Radius within which gunshots can be heard in meters.")]
@@ -107,7 +111,7 @@ namespace Operation1989.AI.Drone
         }
 
         /// <summary>
-        /// Evaluates optical raycasts, FOV, and acoustic proximity.
+        /// Evaluates optical raycasts, FOV, base perimeter boundary, and acoustic proximity.
         /// </summary>
         private void UpdateSensoryInputs()
         {
@@ -120,7 +124,34 @@ namespace Operation1989.AI.Drone
                 return;
             }
 
-            // Check if player is dead
+            // Check 1: Intro Cutscene Gatekeeper
+            var intro = FindAnyObjectByType<IntroTruckSequence>();
+            if (intro && (!intro.HandedOff || !intro.Entered))
+            {
+                CanSeePlayer = false;
+                IsPlayerInCover = false;
+                IsInShootingRange = false;
+                MemoryConfidence = 0f;
+                wasPreviouslySpotted = false;
+                lastSeenTimestamp = -100f;
+                Diagnostics = "Intro Sequence Active / Player Outside Gate";
+                return;
+            }
+
+            // Check 2: Base Perimeter Boundary (Outside entrance gate fence)
+            if (targetPlayer.position.z < entranceGateZBoundary)
+            {
+                CanSeePlayer = false;
+                IsPlayerInCover = false;
+                IsInShootingRange = false;
+                MemoryConfidence = 0f;
+                wasPreviouslySpotted = false;
+                lastSeenTimestamp = -100f;
+                Diagnostics = $"Target Outside Base Perimeter Fence (Z: {targetPlayer.position.z:F0}m < {entranceGateZBoundary:F0}m)";
+                return;
+            }
+
+            // Check 3: Player Dead
             var health = targetPlayer.GetComponent<CombatHealth>();
             if (health && health.Dead)
             {
@@ -137,7 +168,7 @@ namespace Operation1989.AI.Drone
             float distance = delta.magnitude;
             DistanceToPlayer = distance;
 
-            // Optical check 1: Supply truck stealth zone concealment
+            // Optical check 4: Supply truck stealth zone concealment
             if (SupplyTruckStealthZone.IsPlayerConcealed)
             {
                 CanSeePlayer = false;
@@ -146,7 +177,7 @@ namespace Operation1989.AI.Drone
                 return;
             }
 
-            // Optical check 2: Distance boundary
+            // Optical check 5: Distance boundary
             if (distance > visualRange)
             {
                 CanSeePlayer = false;
@@ -156,7 +187,7 @@ namespace Operation1989.AI.Drone
                 return;
             }
 
-            // Optical check 3: Angle Check (Forward Vision Cone OR Downward Ground Cone)
+            // Optical check 6: Angle Check (Forward Vision Cone OR Downward Ground Cone)
             float angleToTarget = Vector3.Angle(transform.forward, delta);
             bool insideForwardCone = angleToTarget <= (fieldOfView * 0.5f);
 
@@ -173,7 +204,7 @@ namespace Operation1989.AI.Drone
                 return;
             }
 
-            // Optical check 4: Physical Line-of-Sight RaycastAll (ignores drone's own colliders)
+            // Optical check 7: Physical Line-of-Sight RaycastAll (ignores drone's own colliders)
             bool unobstructed = true;
             bool hitCover = false;
             string obstructionName = "";
@@ -252,6 +283,7 @@ namespace Operation1989.AI.Drone
         /// </summary>
         private void HandleGunshotFired(Vector3 origin)
         {
+            // Acoustic gunshot is heard only if origin is inside the base or within perimeter
             float dist = Vector3.Distance(transform.position, origin);
             if (dist <= acousticGunshotRange)
             {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Operation1989.Interaction.Environment;
 
 namespace Operation1989.AI.Drone
 {
@@ -17,7 +18,7 @@ namespace Operation1989.AI.Drone
         [Range(2f, 25f)] [SerializeField] private float cruiseSpeed = 8.0f;
         [Range(20f, 180f)] [SerializeField] private float turnSpeed = 90.0f;
         [Range(5f, 45f)] [SerializeField] private float maxBankAngle = 25.0f;
-        [Range(0.2f, 3f)] [SerializeField] private float waypointArrivalDistance = 1.2f;
+        [Range(0.2f, 4f)] [SerializeField] private float waypointArrivalDistance = 2.0f;
 
         [Header("Hover Bobbing")]
         [SerializeField] private bool enableHoverBobbing = true;
@@ -104,7 +105,6 @@ namespace Operation1989.AI.Drone
             {
                 if (rotorBlades[i])
                 {
-                    // Alternate spin directions for realism
                     float dir = (i % 2 == 0) ? 1f : -1f;
                     rotorBlades[i].Rotate(Vector3.up, rot * dir, Space.Self);
                 }
@@ -124,13 +124,30 @@ namespace Operation1989.AI.Drone
             Vector3 delta = targetPoint - transform.position;
             float dist = delta.magnitude;
 
-            // Forward whisker collision check to detect dynamic obstacles and trigger re-planning
-            if (dist > 1.0f && Physics.SphereCast(transform.position, 0.8f, delta.normalized, out RaycastHit hit, whiskerDistance, obstacleLayers, QueryTriggerInteraction.Ignore))
+            // Forward whisker collision check - casts ahead of drone, filtering out self
+            if (dist > 3.0f)
             {
-                // Dynamic obstacle in forward path!
-                Debug.LogWarning($"[Drone Movement] Dynamic obstacle detected ({hit.collider.name})! Triggering A* re-plan.");
-                OnDynamicObstacleDetected?.Invoke();
-                return;
+                Vector3 whiskerOrigin = transform.position + delta.normalized * 2.0f;
+                var hits = Physics.SphereCastAll(whiskerOrigin, 0.4f, delta.normalized, whiskerDistance, obstacleLayers, QueryTriggerInteraction.Ignore);
+                foreach (var h in hits)
+                {
+                    if (h.transform == transform || h.transform.IsChildOf(transform)) continue;
+                    if (h.collider != null && h.collider.isTrigger) continue;
+                    if (h.transform.name.IndexOf("Drone", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+
+                    // Legitimate dynamic obstacle detected (barricade or dynamic barrier)
+                    bool isDynamicObstacle = (h.collider.GetComponentInParent<PushableBarricade>() != null) ||
+                                             (h.collider.name.IndexOf("Barrier", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                             (h.collider.name.IndexOf("Obstacle", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                             h.collider.CompareTag("Obstacle");
+
+                    if (isDynamicObstacle)
+                    {
+                        Debug.LogWarning($"[Drone Movement] Dynamic obstacle detected ahead ({h.collider.name})! Triggering A* re-plan.");
+                        OnDynamicObstacleDetected?.Invoke();
+                        return;
+                    }
+                }
             }
 
             if (dist <= waypointArrivalDistance)
@@ -174,7 +191,6 @@ namespace Operation1989.AI.Drone
 
         private void OnDrawGizmosSelected()
         {
-            // Draw forward obstacle whisker
             Gizmos.color = Color.magenta;
             Gizmos.DrawRay(transform.position, transform.forward * whiskerDistance);
             Gizmos.DrawWireSphere(transform.position + transform.forward * whiskerDistance, 0.8f);

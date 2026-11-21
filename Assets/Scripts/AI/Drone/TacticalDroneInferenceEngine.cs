@@ -44,12 +44,18 @@ namespace Operation1989.AI.Drone
         /// </summary>
         public InferredAction EvaluateForwardChaining()
         {
-            var kb = KnowledgeBase.Instance;
-            if (!kb) return InferredAction.PatrolWaypoints;
+            var kb = KnowledgeBase.Instance ? KnowledgeBase.Instance : UnityEngine.Object.FindAnyObjectByType<KnowledgeBase>();
+            if (!kb)
+            {
+                Debug.LogWarning("[TacticalDroneInferenceEngine] KB is null in EvaluateForwardChaining!");
+                return InferredAction.PatrolWaypoints;
+            }
 
             InferredAction newAction = InferredAction.PatrolWaypoints;
             string newRule = "Rule 5: Default Perimeter Patrol";
             string explanation = "Default flight plan: Scanning waypoints across perimeter.";
+
+            if (!perception) perception = GetComponent<TacticalDronePerception>();
 
             // =========================================================================
             // RULE 1: Direct Combat Engagement
@@ -89,11 +95,11 @@ namespace Operation1989.AI.Drone
             // PREMISE: TargetLost ^ (MemoryConfidence > 0)
             // CONCLUSION: InferredAction.InvestigateLastKnownPos
             // =========================================================================
-            else if (kb.HasFact(Fact.TargetLost) && perception.MemoryConfidence > 0.05f)
+            else if (kb.HasFact(Fact.TargetLost) && (perception == null || perception.MemoryConfidence > 0.05f))
             {
                 newAction = InferredAction.InvestigateLastKnownPos;
                 newRule = "Rule 4: Dynamic Lost Target Search";
-                explanation = $"Visual lost behind obstacles. Memory confidence at {perception.MemoryConfidence:P0}. Sweeping Last Known Position.";
+                explanation = $"Visual lost behind obstacles. {(perception ? $"Memory confidence at {perception.MemoryConfidence:P0}." : "")} Sweeping Last Known Position.";
             }
             // =========================================================================
             // RULE 5: Default Baseline Patrol

@@ -41,6 +41,11 @@ namespace Operation1989.AI.InferenceEngine
     {
         public static KnowledgeBase Instance { get; private set; }
 
+        public static void SetInstanceForTesting(KnowledgeBase kb)
+        {
+            Instance = kb;
+        }
+
         public event Action<Fact, bool> OnFactChanged;
 
         private readonly HashSet<Fact> activeFacts = new HashSet<Fact>();
@@ -53,6 +58,11 @@ namespace Operation1989.AI.InferenceEngine
                 return;
             }
             Instance = this;
+        }
+
+        private void OnEnable()
+        {
+            if (Instance == null) Instance = this;
         }
 
         public void AssertFact(Fact fact)

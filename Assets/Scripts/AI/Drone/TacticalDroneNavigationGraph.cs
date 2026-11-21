@@ -27,9 +27,9 @@ namespace Operation1989.AI.Drone
         [Header("Flight Graph Configuration")]
         [SerializeField] private List<FlightNode> nodes = new List<FlightNode>();
         [Tooltip("Maximum distance between nodes to automatically connect an edge in meters.")]
-        [SerializeField] private float maxConnectionDistance = 60f;
+        [SerializeField] private float maxConnectionDistance = 90f;
         [Tooltip("Layers treated as dynamic obstacles for edge clearance testing.")]
-        [SerializeField] private LayerMask obstacleLayers = 1 << 0;
+        [SerializeField] private LayerMask obstacleLayers = 0;
 
         [Header("Gizmo Visualization (VIVA Defense)")]
         [SerializeField] private bool drawGraphInEditor = true;
@@ -57,13 +57,13 @@ namespace Operation1989.AI.Drone
         public void GenerateDefaultAirspaceNodes()
         {
             nodes.Clear();
-            AddNode("Entrance Watchtower", new Vector3(13.8f, 18f, -65f));
             AddNode("Center Vehicle Depot", new Vector3(0f, 18f, 0f));
-            AddNode("Watchtower North", new Vector3(-35f, 18f, 50f));
-            AddNode("Watchtower South", new Vector3(-35f, 18f, -50f));
             AddNode("Command HQ Rooftop", new Vector3(35f, 22f, 20f));
-            AddNode("Helipad Extraction", new Vector3(50f, 18f, -40f));
             AddNode("Storage Warehouse", new Vector3(30f, 18f, -20f));
+            AddNode("Helipad Extraction", new Vector3(50f, 18f, -40f));
+            AddNode("Entrance Watchtower", new Vector3(10f, 18f, -65f));
+            AddNode("Watchtower South", new Vector3(-35f, 18f, -50f));
+            AddNode("Watchtower North", new Vector3(-35f, 18f, 50f));
             AutoConnectNeighbors();
         }
 

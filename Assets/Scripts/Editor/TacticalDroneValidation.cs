@@ -93,8 +93,14 @@ namespace Operation1989.EditorScripts
             // =========================================================================
             results.Add("\n--- SECTION 2: Knowledge Base & Forward Chaining Inference ---");
 
-            var kbGo = new GameObject("KB_TestRig");
-            var kb = kbGo.AddComponent<KnowledgeBase>();
+            var kb = KnowledgeBase.Instance;
+            GameObject tempKbGo = null;
+            if (!kb)
+            {
+                tempKbGo = new GameObject("KB_TestRig");
+                kb = tempKbGo.AddComponent<KnowledgeBase>();
+                KnowledgeBase.SetInstanceForTesting(kb);
+            }
 
             kb.AssertFact(Fact.PlayerSpotted);
             AssertTest("Knowledge Base Assertion", kb.HasFact(Fact.PlayerSpotted), "Fact.PlayerSpotted asserted successfully.");
@@ -118,7 +124,7 @@ namespace Operation1989.EditorScripts
             kb.AssertFact(Fact.PlayerInShootingRange);
             var action1 = inference.EvaluateForwardChaining();
             AssertTest("Forward Chaining Rule 1 (Combat Suppression)", action1 == InferredAction.EngageRangedCombat,
-                $"Active Rule: {inference.ActiveRuleName}");
+                $"action={action1}, activeRule={inference.ActiveRuleName}, kbNull={(kb == null)}, hasSpotted={(kb != null && kb.HasFact(Fact.PlayerSpotted))}");
 
             // Rule 2: Flank Cover (PlayerSpotted ^ PlayerInCover)
             kb.ClearAllFacts();
@@ -142,8 +148,9 @@ namespace Operation1989.EditorScripts
             AssertTest("Forward Chaining Rule 4 (Lost Target Search)", action4 == InferredAction.InvestigateLastKnownPos,
                 $"Active Rule: {inference.ActiveRuleName}");
 
+            kb.ClearAllFacts();
             UnityEngine.Object.DestroyImmediate(droneGo);
-            UnityEngine.Object.DestroyImmediate(kbGo);
+            if (tempKbGo) UnityEngine.Object.DestroyImmediate(tempKbGo);
 
             // =========================================================================
             // PART 3: SENSORY PERCEPTION & COMBAT TESTS
@@ -151,11 +158,12 @@ namespace Operation1989.EditorScripts
             results.Add("\n--- SECTION 3: Multi-Modal Perception & Combat States ---");
 
             var combatGo = new GameObject("Combat_TestRig");
-            var combat = combatGo.AddComponent<TacticalDroneCombat>();
-            var lightGo = new GameObject("Spotlight");
+            var lightGo = new GameObject("TacticalSearchlight");
             lightGo.transform.SetParent(combatGo.transform);
             var spot = lightGo.AddComponent<Light>();
             spot.type = LightType.Spot;
+            var combat = combatGo.AddComponent<TacticalDroneCombat>();
+            combat.SetSearchlightForTesting(spot);
 
             combat.SetSearchlightState(InferredAction.PatrolWaypoints);
             AssertTest("Searchlight State (Patrol)", spot.intensity > 0, "Spotlight active in patrol state.");

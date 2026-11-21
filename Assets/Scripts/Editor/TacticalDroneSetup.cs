@@ -45,6 +45,7 @@ namespace Operation1989.EditorScripts
             try
             {
                 if (command == "build") BuildTestScene();
+                else if (command == "refresh") { UnityEditor.Compilation.CompilationPipeline.RequestScriptCompilation(); AssetDatabase.Refresh(); }
                 else if (command == "validate") TacticalDroneValidation.Run();
                 else if (command == "integrate") IntegrateIntoBaseScene();
                 else throw new InvalidOperationException("Unknown drone command: " + command);
@@ -157,7 +158,10 @@ namespace Operation1989.EditorScripts
         public static GameObject BuildPrefab()
         {
             var existing = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
-            if (existing) return existing;
+            if (existing)
+            {
+                AssetDatabase.DeleteAsset(PrefabPath);
+            }
 
             var root = new GameObject("TacticalDrone");
             root.tag = "Untagged";
@@ -268,12 +272,12 @@ namespace Operation1989.EditorScripts
                 Object.DestroyImmediate(existingDrone);
             }
 
-            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
-            if (!prefab) prefab = BuildPrefab();
+            // Rebuild prefab fresh
+            var prefab = BuildPrefab();
 
             var drone = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
             drone.name = "Tactical Recon Drone";
-            drone.transform.position = new Vector3(13.8f, 18f, -65f); // Stationed at Entrance Watchtower
+            drone.transform.position = new Vector3(0f, 18f, 0f); // Stationed at Center Vehicle Depot inside base
 
             var player = GameObject.FindGameObjectWithTag("Player");
             if (player)
@@ -290,7 +294,7 @@ namespace Operation1989.EditorScripts
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
-            Debug.Log("[Tactical Drone Setup] Successfully integrated Tactical Recon Drone at Entrance Watchtower!");
+            Debug.Log("[Tactical Drone Setup] Successfully integrated Tactical Recon Drone at Center Vehicle Depot inside military base!");
         }
     }
 }

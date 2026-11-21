@@ -38,6 +38,7 @@ namespace Operation1989.AI.Drone
 
         private int currentGoalNode = -1;
         private float searchTimer = 0f;
+        private float patrolRetryTimer = 0f;
         private Vector3 activeDestination;
 
         private void Awake()
@@ -69,6 +70,7 @@ namespace Operation1989.AI.Drone
                 for (int i = 0; i < count; i++) patrolNodeSequence[i] = i;
             }
 
+            CurrentPatrolIndex = (patrolNodeSequence.Length > 1) ? 1 : 0;
             PlanPathToNextPatrolNode();
         }
 
@@ -101,8 +103,7 @@ namespace Operation1989.AI.Drone
             Vector3 playerPos = perception.TargetPlayer.position;
             combat.SetAimTarget(playerPos, true);
 
-            // Standoff combat hover: stop moving along patrol path, face player
-            movement.ClearPath();
+            // Aim rotation towards player
             Vector3 aimDir = (playerPos - transform.position).normalized;
             aimDir.y = 0;
             if (aimDir.sqrMagnitude > 0.001f)
@@ -111,6 +112,18 @@ namespace Operation1989.AI.Drone
             }
 
             combat.FireSuppressiveBurst(perception.TargetPlayer);
+
+            // Dynamic tactical flight during combat:
+            // If the player is far (> 35m) and drone is not moving, navigate to nearest vantage node
+            float distToPlayer = Vector3.Distance(transform.position, playerPos);
+            if (distToPlayer > 35f && !movement.IsMoving)
+            {
+                int vantage = navGraph.GetNearestNode(playerPos);
+                if (vantage >= 0 && vantage != currentGoalNode)
+                {
+                    PlanPathToNode(vantage);
+                }
+            }
         }
 
         private void ExecuteInvestigateAction()
@@ -150,8 +163,17 @@ namespace Operation1989.AI.Drone
 
             if (!movement.IsMoving)
             {
-                CurrentPatrolIndex = (CurrentPatrolIndex + 1) % patrolNodeSequence.Length;
-                PlanPathToNextPatrolNode();
+                patrolRetryTimer += Time.deltaTime;
+                if (patrolRetryTimer >= 0.5f)
+                {
+                    patrolRetryTimer = 0f;
+                    CurrentPatrolIndex = (CurrentPatrolIndex + 1) % patrolNodeSequence.Length;
+                    PlanPathToNextPatrolNode();
+                }
+            }
+            else
+            {
+                patrolRetryTimer = 0f;
             }
         }
 
