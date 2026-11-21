@@ -1,0 +1,304 @@
+using System;
+using UnityEngine;
+using Operation1989.AI.InferenceEngine;
+using Operation1989.Interaction.Environment;
+using Operation1989.Interaction.Vehicles;
+
+namespace Operation1989.AI.Drone
+{
+    /// <summary>
+    /// Multi-modal sensory perception system for the Tactical Recon Drone.
+    /// Combines dual-cone optical sight (forward + downward spotlight) with acoustic gunfire/footstep hearing,
+    /// obstacle/barricade occlusion checking, and temporal memory decay.
+    /// Asserts and retracts facts directly into KnowledgeBase.
+    /// </summary>
+    [DisallowMultipleComponent]
+    public class TacticalDronePerception : MonoBehaviour
+    {
+        [Header("Target & Reference")]
+        [SerializeField] private Transform targetPlayer;
+        [SerializeField] private LayerMask playerLayer = 1 << 8;
+        [SerializeField] private LayerMask obstacleLayers = (1 << 0) | (1 << 10); // Default + Barricades
+
+        [Header("Optical Vision Parameters")]
+        [Tooltip("Maximum sight range for visual detection in meters.")]
+        [Range(10f, 100f)] [SerializeField] private float visualRange = 45f;
+        [Tooltip("Horizontal Field of View angle in degrees.")]
+        [Range(30f, 180f)] [SerializeField] private float fieldOfView = 90f;
+        [Tooltip("Downward conical scan radius directly beneath drone.")]
+        [Range(2f, 25f)] [SerializeField] private float downwardConeRadius = 8f;
+        [Tooltip("Effective combat firing distance.")]
+        [Range(5f, 50f)] [SerializeField] private float combatRange = 25f;
+
+        [Header("Acoustic Sensor Parameters")]
+        [Tooltip("Radius within which gunshots can be heard in meters.")]
+        [Range(20f, 150f)] [SerializeField] private float acousticGunshotRange = 70f;
+        [Tooltip("Radius within which rapid player footsteps can be heard in meters.")]
+        [Range(5f, 30f)] [SerializeField] private float acousticFootstepRange = 16f;
+
+        [Header("Memory & Decay")]
+        [Tooltip("How long the drone remembers the player after losing line-of-sight (seconds).")]
+        [Range(2f, 30f)] [SerializeField] private float memoryDuration = 8f;
+
+        // Public Sensor State (Inspectable for Live VIVA Demonstration)
+        public bool CanSeePlayer { get; private set; }
+        public bool IsPlayerInCover { get; private set; }
+        public bool IsInShootingRange { get; private set; }
+        public bool HeardGunshot { get; private set; }
+        public Vector3 LastKnownPosition { get; private set; }
+        public Vector3 EstimatedVelocity { get; private set; }
+        public float MemoryConfidence { get; private set; }
+        public float TimeSinceLastSeen => Time.time - lastSeenTimestamp;
+
+        private float lastSeenTimestamp = -100f;
+        private float lastGunshotTimestamp = -100f;
+        private Vector3 previousTargetPos;
+        private bool wasPreviouslySpotted = false;
+
+        public Transform TargetPlayer => targetPlayer;
+
+        private void Awake()
+        {
+            if (!targetPlayer)
+            {
+                var foundPlayer = GameObject.FindGameObjectWithTag("Player");
+                if (foundPlayer) targetPlayer = foundPlayer.transform;
+            }
+        }
+
+        private void OnEnable()
+        {
+            RifleWeapon.OnGunshotFired += HandleGunshotFired;
+        }
+
+        private void OnDisable()
+        {
+            RifleWeapon.OnGunshotFired -= HandleGunshotFired;
+            RetractAllPerceptionFacts();
+        }
+
+        public void SetTargetPlayer(Transform player)
+        {
+            targetPlayer = player;
+        }
+
+        private void Update()
+        {
+            UpdateSensoryInputs();
+            UpdateMemoryDecay();
+            SynchronizeWithKnowledgeBase();
+        }
+
+        /// <summary>
+        /// Evaluates optical raycasts, FOV, and acoustic proximity.
+        /// </summary>
+        private void UpdateSensoryInputs()
+        {
+            if (!targetPlayer)
+            {
+                CanSeePlayer = false;
+                IsPlayerInCover = false;
+                IsInShootingRange = false;
+                return;
+            }
+
+            Vector3 eyeOrigin = transform.position;
+            Vector3 targetAimPoint = targetPlayer.position + Vector3.up * 1.0f;
+            Vector3 delta = targetAimPoint - eyeOrigin;
+            float distance = delta.magnitude;
+
+            // Optical check 1: Supply truck stealth zone concealment
+            if (SupplyTruckStealthZone.IsPlayerConcealed)
+            {
+                CanSeePlayer = false;
+                IsPlayerInCover = true;
+                return;
+            }
+
+            // Optical check 2: Distance boundary
+            if (distance > visualRange)
+            {
+                CanSeePlayer = false;
+                IsPlayerInCover = false;
+                IsInShootingRange = false;
+                return;
+            }
+
+            // Optical check 3: Angle Check (Forward Vision Cone OR Downward Spotter Cone)
+            float angleToTarget = Vector3.Angle(transform.forward, delta);
+            bool insideForwardCone = angleToTarget <= (fieldOfView * 0.5f);
+            
+            // Downward cone check: directly underneath drone
+            Vector3 horizontalOffset = targetPlayer.position - transform.position;
+            horizontalOffset.y = 0;
+            bool insideDownwardCone = horizontalOffset.magnitude <= downwardConeRadius && (eyeOrigin.y > targetPlayer.position.y);
+
+            bool withinVisionAngle = insideForwardCone || insideDownwardCone;
+            if (!withinVisionAngle)
+            {
+                CanSeePlayer = false;
+                return;
+            }
+
+            // Optical check 4: Physical Line-of-Sight Raycast & Cover Detection
+            if (Physics.Raycast(eyeOrigin, delta.normalized, out RaycastHit hit, distance + 0.5f, obstacleLayers | playerLayer, QueryTriggerInteraction.Ignore))
+            {
+                bool hitPlayer = hit.transform == targetPlayer || hit.transform.IsChildOf(targetPlayer);
+                if (hitPlayer)
+                {
+                    CanSeePlayer = true;
+                    IsPlayerInCover = false;
+                    lastSeenTimestamp = Time.time;
+                    LastKnownPosition = targetPlayer.position;
+
+                    // Estimate target velocity
+                    if (Time.deltaTime > 0.0001f)
+                    {
+                        EstimatedVelocity = (targetPlayer.position - previousTargetPos) / Time.deltaTime;
+                    }
+                    previousTargetPos = targetPlayer.position;
+                }
+                else
+                {
+                    // Obstructed by obstacle or dynamic cover (e.g., PushableBarricade)
+                    CanSeePlayer = false;
+                    var barricade = hit.collider.GetComponentInParent<PushableBarricade>();
+                    IsPlayerInCover = barricade != null;
+                }
+            }
+            else
+            {
+                CanSeePlayer = false;
+            }
+
+            IsInShootingRange = CanSeePlayer && (distance <= combatRange);
+
+            // Footstep acoustic sensor check: sprinting player close underneath
+            if (!CanSeePlayer && distance <= acousticFootstepRange)
+            {
+                var fpc = targetPlayer.GetComponent<FirstPersonController>();
+                // Player running/moving fast near drone generates acoustic footsteps
+                if (fpc != null && (targetPlayer.position - previousTargetPos).magnitude / Mathf.Max(Time.deltaTime, 0.001f) > 3.0f)
+                {
+                    LastKnownPosition = targetPlayer.position;
+                    lastSeenTimestamp = Time.time;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Acoustic listener: triggered via static event when any weapon shoots in the world.
+        /// </summary>
+        private void HandleGunshotFired(Vector3 origin)
+        {
+            float dist = Vector3.Distance(transform.position, origin);
+            if (dist <= acousticGunshotRange)
+            {
+                HeardGunshot = true;
+                lastGunshotTimestamp = Time.time;
+                LastKnownPosition = origin;
+                Debug.Log($"[Tactical Drone Perception] Acoustic sensor detected gunfire at {origin} (Distance: {dist:F1}m)");
+            }
+        }
+
+        /// <summary>
+        /// Calculates linear confidence decay for Last Known Position (LKP).
+        /// </summary>
+        private void UpdateMemoryDecay()
+        {
+            if (CanSeePlayer)
+            {
+                MemoryConfidence = 1.0f;
+                wasPreviouslySpotted = true;
+            }
+            else
+            {
+                float elapsed = Time.time - lastSeenTimestamp;
+                if (elapsed < memoryDuration)
+                {
+                    MemoryConfidence = Mathf.Clamp01(1.0f - (elapsed / memoryDuration));
+                }
+                else
+                {
+                    MemoryConfidence = 0.0f;
+                }
+            }
+
+            // Gunshot memory expires after 4 seconds
+            if (HeardGunshot && (Time.time - lastGunshotTimestamp > 4.0f))
+            {
+                HeardGunshot = false;
+            }
+        }
+
+        /// <summary>
+        /// Asserts and retracts facts in the Knowledge Base for Forward Chaining.
+        /// </summary>
+        private void SynchronizeWithKnowledgeBase()
+        {
+            var kb = KnowledgeBase.Instance;
+            if (!kb) return;
+
+            // PlayerSpotted
+            if (CanSeePlayer) kb.AssertFact(Fact.PlayerSpotted);
+            else kb.RetractFact(Fact.PlayerSpotted);
+
+            // PlayerInCover
+            if (IsPlayerInCover) kb.AssertFact(Fact.PlayerInCover);
+            else kb.RetractFact(Fact.PlayerInCover);
+
+            // PlayerInShootingRange
+            if (IsInShootingRange) kb.AssertFact(Fact.PlayerInShootingRange);
+            else kb.RetractFact(Fact.PlayerInShootingRange);
+
+            // GunshotHeard
+            if (HeardGunshot) kb.AssertFact(Fact.GunshotHeard);
+            else kb.RetractFact(Fact.GunshotHeard);
+
+            // TargetLost (previously spotted, now lost, but memory is still active)
+            bool targetLost = !CanSeePlayer && wasPreviouslySpotted && (MemoryConfidence > 0f);
+            if (targetLost) kb.AssertFact(Fact.TargetLost);
+            else kb.RetractFact(Fact.TargetLost);
+
+            if (MemoryConfidence <= 0f)
+            {
+                wasPreviouslySpotted = false;
+            }
+        }
+
+        private void RetractAllPerceptionFacts()
+        {
+            var kb = KnowledgeBase.Instance;
+            if (!kb) return;
+            kb.RetractFact(Fact.PlayerSpotted);
+            kb.RetractFact(Fact.PlayerInCover);
+            kb.RetractFact(Fact.PlayerInShootingRange);
+            kb.RetractFact(Fact.GunshotHeard);
+            kb.RetractFact(Fact.TargetLost);
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            // Optical vision cone
+            Gizmos.color = CanSeePlayer ? Color.red : new Color(0f, 1f, 1f, 0.3f);
+            Gizmos.DrawRay(transform.position, Quaternion.Euler(0, -fieldOfView * 0.5f, 0) * transform.forward * visualRange);
+            Gizmos.DrawRay(transform.position, Quaternion.Euler(0, fieldOfView * 0.5f, 0) * transform.forward * visualRange);
+
+            // Downward cone
+            Gizmos.color = new Color(1f, 0.92f, 0.016f, 0.25f);
+            Gizmos.DrawWireSphere(transform.position - Vector3.up * 10f, downwardConeRadius);
+
+            // Acoustic gunshot radius
+            Gizmos.color = new Color(0.8f, 0.2f, 0.8f, 0.15f);
+            Gizmos.DrawWireSphere(transform.position, acousticGunshotRange);
+
+            // Last Known Position (LKP)
+            if (MemoryConfidence > 0f)
+            {
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawWireSphere(LastKnownPosition, 1.0f);
+                Gizmos.DrawLine(transform.position, LastKnownPosition);
+            }
+        }
+    }
+}
