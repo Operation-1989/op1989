@@ -9,6 +9,7 @@ public sealed class RifleWeapon : MonoBehaviour
     public float damage = 25, range = 100;
     public bool playerWeapon;
     public int ShotsFired { get; private set; }
+    public static event Action<Vector3> OnGunshotFired;
     AudioSource audioSource;
     LineRenderer tracer, flash;
     Light muzzleLight;
@@ -62,6 +63,7 @@ public sealed class RifleWeapon : MonoBehaviour
             end=barrelHit.point;DamageTarget(barrelHit);
         }
         ShotsFired++;
+        OnGunshotFired?.Invoke(start);
         if(shotSound) {audioSource.pitch=UnityEngine.Random.Range(.95f,1.05f);audioSource.PlayOneShot(shotSound,playerWeapon?.55f:.7f);}
         tracer.SetPosition(0,start);tracer.SetPosition(1,end);tracer.enabled=true;
         flash.SetPosition(0,start);flash.SetPosition(1,start+direction*.38f);flash.enabled=true;
