@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -14,7 +15,9 @@ namespace Operation1989.AI.InferenceEngine
         DroneAlertActive,
         HQDoorLocked,
         JeepInPursuit,
-        SecretIntelCaptured
+        SecretIntelCaptured,
+        GunshotHeard,
+        TargetLost
     }
 
     /// <summary>
@@ -38,7 +41,14 @@ namespace Operation1989.AI.InferenceEngine
     {
         public static KnowledgeBase Instance { get; private set; }
 
-        private HashSet<Fact> activeFacts = new HashSet<Fact>();
+        public static void SetInstanceForTesting(KnowledgeBase kb)
+        {
+            Instance = kb;
+        }
+
+        public event Action<Fact, bool> OnFactChanged;
+
+        private readonly HashSet<Fact> activeFacts = new HashSet<Fact>();
 
         private void Awake()
         {
@@ -50,11 +60,17 @@ namespace Operation1989.AI.InferenceEngine
             Instance = this;
         }
 
+        private void OnEnable()
+        {
+            if (Instance == null) Instance = this;
+        }
+
         public void AssertFact(Fact fact)
         {
             if (!activeFacts.Contains(fact))
             {
                 activeFacts.Add(fact);
+                OnFactChanged?.Invoke(fact, true);
                 Debug.Log($"[IS Knowledge Base] + Fact Asserted: {fact}");
             }
         }
@@ -64,6 +80,7 @@ namespace Operation1989.AI.InferenceEngine
             if (activeFacts.Contains(fact))
             {
                 activeFacts.Remove(fact);
+                OnFactChanged?.Invoke(fact, false);
                 Debug.Log($"[IS Knowledge Base] - Fact Retracted: {fact}");
             }
         }
@@ -71,6 +88,21 @@ namespace Operation1989.AI.InferenceEngine
         public bool HasFact(Fact fact)
         {
             return activeFacts.Contains(fact);
+        }
+
+        public IEnumerable<Fact> GetActiveFacts()
+        {
+            return activeFacts;
+        }
+
+        public void ClearAllFacts()
+        {
+            var copy = new List<Fact>(activeFacts);
+            activeFacts.Clear();
+            foreach (var f in copy)
+            {
+                OnFactChanged?.Invoke(f, false);
+            }
         }
     }
 }
