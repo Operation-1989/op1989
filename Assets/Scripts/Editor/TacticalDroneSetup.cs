@@ -108,6 +108,9 @@ namespace Operation1989.EditorScripts
             cc.center = new Vector3(0f, 0.9f, 0f);
 
             var combatHealth = player.AddComponent<CombatHealth>();
+            combatHealth.isPlayer = true;
+            combatHealth.maximumHealth = 500f;
+            combatHealth.regeneratePlayerHealth = true;
             var rifle = player.AddComponent<RifleWeapon>();
             rifle.playerWeapon = true;
 

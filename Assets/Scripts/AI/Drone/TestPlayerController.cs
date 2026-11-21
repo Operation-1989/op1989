@@ -5,7 +5,8 @@ namespace Operation1989.AI.Drone
 {
     /// <summary>
     /// Interactive First-Person Controller for test scenes.
-    /// Provides WASD exploration, smooth mouse look, cursor locking, and left-click rifle shooting.
+    /// Provides WASD exploration, smooth mouse look, cursor locking, left-click rifle shooting,
+    /// health management, [R] respawn, and [G] godmode toggle for testing.
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(CharacterController))]
@@ -20,15 +21,31 @@ namespace Operation1989.AI.Drone
         public Camera playerCamera;
         public RifleWeapon rifle;
 
+        [Header("Testing Controls")]
+        public bool godmode = false;
+
         private CharacterController controller;
+        private CombatHealth health;
         private float verticalRotation = 0f;
         private float verticalVelocity = 0f;
+        private Vector3 spawnPosition;
+        private Quaternion spawnRotation;
 
         private void Awake()
         {
             controller = GetComponent<CharacterController>();
+            health = GetComponent<CombatHealth>();
+            if (health)
+            {
+                health.isPlayer = true;
+                health.maximumHealth = 500f;
+                health.regeneratePlayerHealth = true;
+            }
             if (!rifle) rifle = GetComponent<RifleWeapon>();
             if (!playerCamera) playerCamera = GetComponentInChildren<Camera>();
+
+            spawnPosition = transform.position;
+            spawnRotation = transform.rotation;
         }
 
         private void Start()
@@ -39,10 +56,52 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            // Godmode protection
+            if (health)
+            {
+                health.CinematicProtection = godmode;
+            }
+
+            // [G] to toggle Godmode
+            if (Keyboard.current != null && Keyboard.current.gKey.wasPressedThisFrame)
+            {
+                godmode = !godmode;
+                Debug.Log($"[Test Player] Godmode: {(godmode ? "ENABLED (Invulnerable)" : "DISABLED")}");
+            }
+
+            // Handle Death & Respawn
+            if (health && health.Dead)
+            {
+                if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
+                {
+                    Respawn();
+                }
+                return;
+            }
+
             HandleCursorLock();
             HandleMouseLook();
             HandleMovement();
             HandleWeaponFiring();
+        }
+
+        public void Respawn()
+        {
+            if (controller) controller.enabled = false;
+            transform.SetPositionAndRotation(spawnPosition, spawnRotation);
+            verticalRotation = 0f;
+            verticalVelocity = 0f;
+            if (playerCamera) playerCamera.transform.localRotation = Quaternion.identity;
+            if (controller) controller.enabled = true;
+
+            if (health)
+            {
+                health.Restore();
+            }
+
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+            Debug.Log("[Test Player] Respawned at base standing upright.");
         }
 
         private void HandleCursorLock()
@@ -112,18 +171,37 @@ namespace Operation1989.AI.Drone
 
         private void OnGUI()
         {
-            if (Cursor.lockState != CursorLockMode.Locked)
+            // Death Screen Overlay
+            if (health && health.Dead)
             {
-                GUI.color = Color.yellow;
-                GUI.Label(new Rect(Screen.width * 0.5f - 100, Screen.height * 0.5f - 40, 200, 30), "Click Game View to Play / Look");
+                GUI.color = Color.red;
+                GUI.Box(new Rect(Screen.width * 0.5f - 160, Screen.height * 0.5f - 40, 320, 80), GUIContent.none);
+                GUI.color = Color.white;
+                GUI.Label(new Rect(Screen.width * 0.5f - 140, Screen.height * 0.5f - 30, 280, 25), "<b>ELIMINATED BY TACTICAL DRONE</b>");
+                GUI.Label(new Rect(Screen.width * 0.5f - 140, Screen.height * 0.5f - 5, 280, 25), "Press <b>[R]</b> to Respawn upright");
                 return;
             }
 
-            // Simple center dot crosshair
+            if (Cursor.lockState != CursorLockMode.Locked)
+            {
+                GUI.color = Color.yellow;
+                GUI.Label(new Rect(Screen.width * 0.5f - 120, Screen.height * 0.5f - 40, 240, 30), "Click Game View to Play | [G] Godmode");
+                return;
+            }
+
+            // Crosshair
             float cx = Screen.width * 0.5f;
             float cy = Screen.height * 0.5f;
             GUI.color = new Color(1f, 1f, 1f, 0.8f);
             GUI.Box(new Rect(cx - 3, cy - 3, 6, 6), GUIContent.none);
+
+            // Bottom-right health bar & Godmode status
+            if (health)
+            {
+                GUI.color = godmode ? Color.cyan : (health.Current > 30f ? Color.green : Color.red);
+                string hpText = godmode ? "HP: [GODMODE ACTIVE]" : $"HP: {health.Current:F0} / {health.maximumHealth:F0} | [G] Toggle Godmode";
+                GUI.Label(new Rect(Screen.width - 280, Screen.height - 35, 260, 25), hpText);
+            }
         }
     }
 }
