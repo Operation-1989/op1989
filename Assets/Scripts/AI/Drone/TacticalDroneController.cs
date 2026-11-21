@@ -35,6 +35,7 @@ namespace Operation1989.AI.Drone
         private TacticalDroneNavigationGraph navGraph;
         private TacticalDroneMovement movement;
         private TacticalDroneCombat combat;
+        private DroneDamage damageHandler;
 
         private int currentGoalNode = -1;
         private float searchTimer = 0f;
@@ -43,6 +44,7 @@ namespace Operation1989.AI.Drone
 
         private void Awake()
         {
+            damageHandler = GetComponent<DroneDamage>();
             perception = GetComponent<TacticalDronePerception>();
             inferenceEngine = GetComponent<TacticalDroneInferenceEngine>();
             navGraph = GetComponent<TacticalDroneNavigationGraph>();
@@ -76,6 +78,14 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (damageHandler && damageHandler.Destroyed)
+            {
+                combat.ShutDownAllCombatSystems();
+                movement.ClearPath();
+                enabled = false;
+                return;
+            }
+
             InferredAction action = inferenceEngine.CurrentAction;
             combat.SetSearchlightState(action);
 
@@ -221,6 +231,15 @@ namespace Operation1989.AI.Drone
         private void OnGUI()
         {
             if (!showDebugOverlay) return;
+
+            if (damageHandler && damageHandler.Destroyed)
+            {
+                GUILayout.BeginArea(new Rect(15, 15, 380, 70), "Tactical Drone AI Telemetry", GUI.skin.window);
+                GUILayout.Label("<color=red><b>DRONE STATUS: NEUTRALIZED / OFFLINE</b></color>");
+                GUILayout.Label("Sensors, flight engines, and combat lasers terminated.");
+                GUILayout.EndArea();
+                return;
+            }
 
             GUILayout.BeginArea(new Rect(15, 15, 420, 260), "Tactical Drone AI Telemetry (Student 2)", GUI.skin.window);
 

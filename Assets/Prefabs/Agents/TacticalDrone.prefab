@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &1577181763534903888
+--- !u!1 &2628347783386648113
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,144 +8,16 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 8890979686443850125}
-  m_Layer: 0
-  m_Name: MuzzlePoint
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &8890979686443850125
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1577181763534903888}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: -0.2, z: 1.2}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 7840623026972012482}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &7505097509344460788
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 4389937483927316976}
-  - component: {fileID: 2949660671837801654}
-  m_Layer: 0
-  m_Name: TacticalSearchlight
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &4389937483927316976
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7505097509344460788}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0.5, y: 0, z: 0, w: 0.8660254}
-  m_LocalPosition: {x: 0, y: -0.3, z: 0.5}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 7840623026972012482}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!108 &2949660671837801654
-Light:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7505097509344460788}
-  m_Enabled: 1
-  serializedVersion: 13
-  m_Type: 0
-  m_Color: {r: 0.2, g: 0.9, b: 1, a: 1}
-  m_Intensity: 3
-  m_Range: 50
-  m_SpotAngle: 45
-  m_InnerSpotAngle: 21.80208
-  m_CookieSize2D: {x: 0.5, y: 0.5}
-  m_Shadows:
-    m_Type: 0
-    m_Resolution: -1
-    m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0.4
-    m_NearPlane: 0.2
-    m_CullingMatrixOverride:
-      e00: 1
-      e01: 0
-      e02: 0
-      e03: 0
-      e10: 0
-      e11: 1
-      e12: 0
-      e13: 0
-      e20: 0
-      e21: 0
-      e22: 1
-      e23: 0
-      e30: 0
-      e31: 0
-      e32: 0
-      e33: 1
-    m_UseCullingMatrixOverride: 0
-  m_Cookie: {fileID: 0}
-  m_DrawHalo: 0
-  m_Flare: {fileID: 0}
-  m_RenderMode: 0
-  m_CullingMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  m_RenderingLayerMask: 1
-  m_Lightmapping: 4
-  m_LightShadowCasterMode: 0
-  m_AreaSize: {x: 1, y: 1}
-  m_BounceIntensity: 1
-  m_ColorTemperature: 6570
-  m_UseColorTemperature: 0
-  m_BoundingSphereOverride: {x: 0, y: 0, z: 0, w: 0}
-  m_UseBoundingSphereOverride: 0
-  m_UseViewFrustumForShadowCasterCull: 1
-  m_ForceVisible: 0
-  m_ShapeRadius: 0.025
-  m_ShadowAngle: 0
-  m_LightUnit: 1
-  m_LuxAtDistance: 1
-  m_EnableSpotReflector: 1
---- !u!1 &8869961922763367562
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 7840623026972012482}
-  - component: {fileID: 4373235513626792175}
-  - component: {fileID: 7775910897434276675}
-  - component: {fileID: 357529242635601130}
-  - component: {fileID: 1692465775718519712}
-  - component: {fileID: 6476604519802921469}
-  - component: {fileID: 8665692640717327728}
-  - component: {fileID: 7724796680476326965}
-  - component: {fileID: 6344188560564819038}
-  - component: {fileID: 8122822120175946840}
+  - component: {fileID: 6842388083624639962}
+  - component: {fileID: 5332093825832205277}
+  - component: {fileID: 798895746386178791}
+  - component: {fileID: 7286297259781978477}
+  - component: {fileID: 7161744402540517911}
+  - component: {fileID: 8763441124017475210}
+  - component: {fileID: 8720633468765590970}
+  - component: {fileID: 889028186696700338}
+  - component: {fileID: 4161632989587939232}
+  - component: {fileID: 2465016454163266258}
   m_Layer: 0
   m_Name: TacticalDrone
   m_TagString: Untagged
@@ -153,31 +25,31 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &7840623026972012482
+--- !u!4 &6842388083624639962
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1397977482322534684}
-  - {fileID: 4389937483927316976}
-  - {fileID: 8890979686443850125}
+  - {fileID: 5040719824698848497}
+  - {fileID: 2324205545371276750}
+  - {fileID: 562190276548951499}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!65 &4373235513626792175
+--- !u!65 &5332093825832205277
 BoxCollider:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
@@ -192,13 +64,13 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 2.5, y: 0.8, z: 2.5}
   m_Center: {x: 0, y: 0, z: 0}
---- !u!82 &7775910897434276675
+--- !u!82 &798895746386178791
 AudioSource:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Enabled: 1
   serializedVersion: 4
   OutputAudioMixerGroup: {fileID: 0}
@@ -289,13 +161,13 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
---- !u!114 &357529242635601130
+--- !u!114 &7286297259781978477
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7393bcfe416a48758b95376877285e86, type: 3}
@@ -304,39 +176,37 @@ MonoBehaviour:
   maximumHealth: 250
   fallingSparksSeconds: 6
   wreckFireSeconds: 60
---- !u!114 &1692465775718519712
+--- !u!114 &7161744402540517911
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 15dadd034fd94954cbfa5905cc79415e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Operation1989.AI.Drone.TacticalDronePerception
   targetPlayer: {fileID: 0}
-  playerLayer:
-    serializedVersion: 2
-    m_Bits: 256
   obstacleLayers:
     serializedVersion: 2
-    m_Bits: 1025
-  visualRange: 250
-  fieldOfView: 130
-  downwardConeRadius: 55
-  combatRange: 60
+    m_Bits: 4294967295
+  visualRange: 85
+  fieldOfView: 110
+  downwardConeRadius: 35
+  combatRange: 35
+  entranceGateZBoundary: -88
   acousticGunshotRange: 85
   acousticFootstepRange: 25
   memoryDuration: 8
---- !u!114 &6476604519802921469
+--- !u!114 &8763441124017475210
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 457176efe3997fe4598ca47cea1ed4d9, type: 3}
@@ -345,32 +215,32 @@ MonoBehaviour:
   currentAction: 0
   activeRuleName: 'Default: Perimeter Patrol'
   ruleExplanation: No tactical threats detected. Conducting baseline perimeter aerial patrol.
---- !u!114 &8665692640717327728
+--- !u!114 &8720633468765590970
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 02ad61d0bb89f624eb66caec51c962db, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Operation1989.AI.Drone.TacticalDroneNavigationGraph
   nodes: []
-  maxConnectionDistance: 60
+  maxConnectionDistance: 90
   obstacleLayers:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 0
   drawGraphInEditor: 1
   showActivePath: 1
---- !u!114 &7724796680476326965
+--- !u!114 &889028186696700338
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fff90c89201083e448d4514b694be59e, type: 3}
@@ -379,7 +249,7 @@ MonoBehaviour:
   cruiseSpeed: 8
   turnSpeed: 90
   maxBankAngle: 25
-  waypointArrivalDistance: 1.2
+  waypointArrivalDistance: 2
   enableHoverBobbing: 1
   bobbingAmplitude: 0.25
   bobbingSpeed: 1.8
@@ -389,20 +259,20 @@ MonoBehaviour:
   obstacleLayers:
     serializedVersion: 2
     m_Bits: 1
---- !u!114 &6344188560564819038
+--- !u!114 &4161632989587939232
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 29c1e0e83dab3bb4384a13b6b25a0b0e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Operation1989.AI.Drone.TacticalDroneCombat
   searchlight: {fileID: 0}
-  patrolColor: {r: 0.2, g: 0.9, b: 1, a: 1}
+  patrolColor: {r: 0.92, g: 0.95, b: 1, a: 1}
   investigateColor: {r: 1, g: 0.85, b: 0.1, a: 1}
   engageColor: {r: 1, g: 0.1, b: 0.1, a: 1}
   lightAimSpeed: 10
@@ -413,13 +283,13 @@ MonoBehaviour:
   burstCooldown: 1.5
   fireAudioClip: {fileID: 0}
   laserTracer: {fileID: 0}
---- !u!114 &8122822120175946840
+--- !u!114 &2465016454163266258
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8869961922763367562}
+  m_GameObject: {fileID: 2628347783386648113}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a8bdb748f796e8640a9eb8d57720bdf5, type: 3}
@@ -428,13 +298,141 @@ MonoBehaviour:
   patrolNodeSequence: 
   searchDurationAtLkp: 5
   showDebugOverlay: 1
---- !u!1001 &1507619972068214519
+--- !u!1 &6236557766713916485
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 562190276548951499}
+  m_Layer: 0
+  m_Name: MuzzlePoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &562190276548951499
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6236557766713916485}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: -0.2, z: 1.2}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6842388083624639962}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &6331768700679034762
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2324205545371276750}
+  - component: {fileID: 4329997762214050634}
+  m_Layer: 0
+  m_Name: TacticalSearchlight
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2324205545371276750
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6331768700679034762}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.5, y: 0, z: 0, w: 0.8660254}
+  m_LocalPosition: {x: 0, y: -0.3, z: 0.5}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6842388083624639962}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!108 &4329997762214050634
+Light:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6331768700679034762}
+  m_Enabled: 1
+  serializedVersion: 13
+  m_Type: 0
+  m_Color: {r: 0.92, g: 0.95, b: 1, a: 1}
+  m_Intensity: 1.2
+  m_Range: 45
+  m_SpotAngle: 40
+  m_InnerSpotAngle: 21.80208
+  m_CookieSize2D: {x: 0.5, y: 0.5}
+  m_Shadows:
+    m_Type: 0
+    m_Resolution: -1
+    m_CustomResolution: -1
+    m_Strength: 1
+    m_Bias: 0.05
+    m_NormalBias: 0.4
+    m_NearPlane: 0.2
+    m_CullingMatrixOverride:
+      e00: 1
+      e01: 0
+      e02: 0
+      e03: 0
+      e10: 0
+      e11: 1
+      e12: 0
+      e13: 0
+      e20: 0
+      e21: 0
+      e22: 1
+      e23: 0
+      e30: 0
+      e31: 0
+      e32: 0
+      e33: 1
+    m_UseCullingMatrixOverride: 0
+  m_Cookie: {fileID: 0}
+  m_DrawHalo: 0
+  m_Flare: {fileID: 0}
+  m_RenderMode: 0
+  m_CullingMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_RenderingLayerMask: 1
+  m_Lightmapping: 4
+  m_LightShadowCasterMode: 0
+  m_AreaSize: {x: 1, y: 1}
+  m_BounceIntensity: 1
+  m_ColorTemperature: 6570
+  m_UseColorTemperature: 0
+  m_BoundingSphereOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_UseBoundingSphereOverride: 0
+  m_UseViewFrustumForShadowCasterCull: 1
+  m_ForceVisible: 0
+  m_ShapeRadius: 0.025
+  m_ShadowAngle: 0
+  m_LightUnit: 1
+  m_LuxAtDistance: 1
+  m_EnableSpotReflector: 1
+--- !u!1001 &4791410558052913946
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
     serializedVersion: 3
-    m_TransformParent: {fileID: 7840623026972012482}
+    m_TransformParent: {fileID: 6842388083624639962}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 737790f7fb221f241a08372e6420e72d, type: 3}
       propertyPath: m_LocalScale.x
@@ -497,8 +495,8 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 737790f7fb221f241a08372e6420e72d, type: 3}
---- !u!4 &1397977482322534684 stripped
+--- !u!4 &5040719824698848497 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 737790f7fb221f241a08372e6420e72d, type: 3}
-  m_PrefabInstance: {fileID: 1507619972068214519}
+  m_PrefabInstance: {fileID: 4791410558052913946}
   m_PrefabAsset: {fileID: 0}

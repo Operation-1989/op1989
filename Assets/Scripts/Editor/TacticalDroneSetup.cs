@@ -200,10 +200,10 @@ namespace Operation1989.EditorScripts
             lightGo.transform.localRotation = Quaternion.Euler(60f, 0f, 0f);
             var spot = lightGo.AddComponent<Light>();
             spot.type = LightType.Spot;
-            spot.range = 50f;
-            spot.spotAngle = 45f;
-            spot.intensity = 3f;
-            spot.color = new Color(0.2f, 0.9f, 1f);
+            spot.range = 45f;
+            spot.spotAngle = 40f;
+            spot.intensity = 1.2f;
+            spot.color = new Color(0.92f, 0.95f, 1f); // Natural Soft White
 
             // Muzzle
             var muzzleGo = new GameObject("MuzzlePoint");

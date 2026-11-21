@@ -59,11 +59,13 @@ namespace Operation1989.AI.Drone
         private float lastGunshotTimestamp = -100f;
         private Vector3 previousTargetPos;
         private bool wasPreviouslySpotted = false;
+        private DroneDamage damageHandler;
 
         public Transform TargetPlayer => targetPlayer;
 
         private void Awake()
         {
+            damageHandler = GetComponent<DroneDamage>();
             FindPlayerTarget();
         }
 
@@ -103,6 +105,17 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (damageHandler && damageHandler.Destroyed)
+            {
+                CanSeePlayer = false;
+                IsPlayerInCover = false;
+                IsInShootingRange = false;
+                RetractAllPerceptionFacts();
+                Diagnostics = "Drone Neutralized / Offline";
+                enabled = false;
+                return;
+            }
+
             if (!targetPlayer) FindPlayerTarget();
 
             UpdateSensoryInputs();

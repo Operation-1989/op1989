@@ -14,7 +14,7 @@ namespace Operation1989.AI.Drone
     {
         [Header("Spotlight Configuration")]
         [SerializeField] private Light searchlight;
-        [SerializeField] private Color patrolColor = new Color(0.2f, 0.9f, 1f); // Cyan
+        [SerializeField] private Color patrolColor = new Color(0.92f, 0.95f, 1f); // Natural Soft White (subtle, non-disturbing)
         [SerializeField] private Color investigateColor = new Color(1f, 0.85f, 0.1f); // Amber Yellow
         [SerializeField] private Color engageColor = new Color(1f, 0.1f, 0.1f); // Hostile Red
         [Range(2f, 25f)] [SerializeField] private float lightAimSpeed = 10f;
@@ -31,6 +31,7 @@ namespace Operation1989.AI.Drone
         [SerializeField] private LineRenderer laserTracer;
 
         private AudioSource audioSource;
+        private DroneDamage damageHandler;
         private float nextFireTime = 0f;
         private int currentBurstCount = 0;
         private Vector3 targetAimPosition;
@@ -38,6 +39,7 @@ namespace Operation1989.AI.Drone
 
         private void Awake()
         {
+            damageHandler = GetComponent<DroneDamage>();
             audioSource = GetComponent<AudioSource>();
             if (!audioSource)
             {
@@ -93,17 +95,26 @@ namespace Operation1989.AI.Drone
             {
                 case InferredAction.EngageRangedCombat:
                     SetSearchlightColor(engageColor);
-                    searchlight.intensity = 4.5f;
+                    searchlight.intensity = 4.0f;
                     break;
                 case InferredAction.InvestigateLastKnownPos:
                     SetSearchlightColor(investigateColor);
-                    searchlight.intensity = 3.5f;
+                    searchlight.intensity = 2.5f;
                     break;
                 default:
                     SetSearchlightColor(patrolColor);
-                    searchlight.intensity = 2.5f;
+                    searchlight.intensity = 1.2f;
                     break;
             }
+        }
+
+        public void ShutDownAllCombatSystems()
+        {
+            if (searchlight) searchlight.enabled = false;
+            if (laserTracer) laserTracer.enabled = false;
+            if (audioSource && audioSource.isPlaying) audioSource.Stop();
+            isTrackingTarget = false;
+            enabled = false;
         }
 
         private void SetSearchlightColor(Color color)
@@ -116,6 +127,12 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (damageHandler && damageHandler.Destroyed)
+            {
+                ShutDownAllCombatSystems();
+                return;
+            }
+
             UpdateSearchlightAim();
             if (laserTracer && laserTracer.enabled && Time.time > nextFireTime - 0.08f)
             {
@@ -149,6 +166,7 @@ namespace Operation1989.AI.Drone
         /// </summary>
         public void FireSuppressiveBurst(Transform target)
         {
+            if (damageHandler && damageHandler.Destroyed) return;
             if (!target || Time.time < nextFireTime) return;
 
             Vector3 origin = muzzlePoint ? muzzlePoint.position : transform.position;
