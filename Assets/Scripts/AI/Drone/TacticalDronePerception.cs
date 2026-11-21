@@ -21,13 +21,13 @@ namespace Operation1989.AI.Drone
 
         [Header("Optical Vision Parameters")]
         [Tooltip("Maximum sight range for visual detection in meters.")]
-        [Range(20f, 200f)] [SerializeField] private float visualRange = 120f;
+        [Range(20f, 300f)] [SerializeField] private float visualRange = 250f;
         [Tooltip("Horizontal Field of View angle in degrees.")]
-        [Range(45f, 180f)] [SerializeField] private float fieldOfView = 120f;
+        [Range(45f, 180f)] [SerializeField] private float fieldOfView = 130f;
         [Tooltip("Downward ground coverage radius directly beneath drone in meters.")]
-        [Range(10f, 80f)] [SerializeField] private float downwardConeRadius = 45f;
+        [Range(10f, 100f)] [SerializeField] private float downwardConeRadius = 55f;
         [Tooltip("Effective combat firing distance.")]
-        [Range(10f, 80f)] [SerializeField] private float combatRange = 45f;
+        [Range(10f, 100f)] [SerializeField] private float combatRange = 60f;
 
         [Header("Acoustic Sensor Parameters")]
         [Tooltip("Radius within which gunshots can be heard in meters.")]

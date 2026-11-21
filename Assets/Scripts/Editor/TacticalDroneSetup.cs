@@ -252,38 +252,45 @@ namespace Operation1989.EditorScripts
                 kbGo.AddComponent<KnowledgeBase>();
             }
 
-            // Check if Tactical Recon Drone already placed
+            // Disable the old non-AI dummy survey drone so only the Tactical AI drone operates
+            var dummyDrone = GameObject.Find("RUKO Survey Drone");
+            if (dummyDrone)
+            {
+                var dummyPatrol = dummyDrone.GetComponent<DroneMapPatrol>();
+                if (dummyPatrol) dummyPatrol.enabled = false;
+                dummyDrone.SetActive(false);
+            }
+
+            // Clean up existing Tactical Recon Drone to reposition cleanly at entrance watchtower
             var existingDrone = GameObject.Find("Tactical Recon Drone");
-            if (!existingDrone)
+            if (existingDrone)
             {
-                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
-                if (!prefab) prefab = BuildPrefab();
-
-                var drone = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-                drone.name = "Tactical Recon Drone";
-                drone.transform.position = new Vector3(-35f, 18f, 50f); // Stationed at North Watchtower
-
-                var player = GameObject.FindGameObjectWithTag("Player");
-                if (player)
-                {
-                    var perception = drone.GetComponent<TacticalDronePerception>();
-                    if (perception) perception.SetTargetPlayer(player.transform);
-                }
-
-                var navGraph = drone.GetComponent<TacticalDroneNavigationGraph>();
-                if (navGraph)
-                {
-                    navGraph.GenerateDefaultAirspaceNodes();
-                }
-
-                EditorSceneManager.MarkSceneDirty(scene);
-                EditorSceneManager.SaveScene(scene);
-                Debug.Log("[Tactical Drone Setup] Successfully integrated Tactical Recon Drone into army base scene!");
+                Object.DestroyImmediate(existingDrone);
             }
-            else
+
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
+            if (!prefab) prefab = BuildPrefab();
+
+            var drone = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            drone.name = "Tactical Recon Drone";
+            drone.transform.position = new Vector3(13.8f, 18f, -65f); // Stationed at Entrance Watchtower
+
+            var player = GameObject.FindGameObjectWithTag("Player");
+            if (player)
             {
-                Debug.Log("[Tactical Drone Setup] Tactical Recon Drone is already present in army base scene.");
+                var perception = drone.GetComponent<TacticalDronePerception>();
+                if (perception) perception.SetTargetPlayer(player.transform);
             }
+
+            var navGraph = drone.GetComponent<TacticalDroneNavigationGraph>();
+            if (navGraph)
+            {
+                navGraph.GenerateDefaultAirspaceNodes();
+            }
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene);
+            Debug.Log("[Tactical Drone Setup] Successfully integrated Tactical Recon Drone at Entrance Watchtower!");
         }
     }
 }

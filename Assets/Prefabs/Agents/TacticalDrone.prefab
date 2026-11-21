@@ -323,10 +323,10 @@ MonoBehaviour:
   obstacleLayers:
     serializedVersion: 2
     m_Bits: 1025
-  visualRange: 120
-  fieldOfView: 120
-  downwardConeRadius: 45
-  combatRange: 45
+  visualRange: 250
+  fieldOfView: 130
+  downwardConeRadius: 55
+  combatRange: 60
   acousticGunshotRange: 85
   acousticFootstepRange: 25
   memoryDuration: 8

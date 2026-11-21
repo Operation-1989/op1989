@@ -57,10 +57,10 @@ namespace Operation1989.AI.Drone
         public void GenerateDefaultAirspaceNodes()
         {
             nodes.Clear();
+            AddNode("Entrance Watchtower", new Vector3(13.8f, 18f, -65f));
+            AddNode("Center Vehicle Depot", new Vector3(0f, 18f, 0f));
             AddNode("Watchtower North", new Vector3(-35f, 18f, 50f));
             AddNode("Watchtower South", new Vector3(-35f, 18f, -50f));
-            AddNode("Main Gate Entrance", new Vector3(0f, 16f, -65f));
-            AddNode("Center Vehicle Depot", new Vector3(0f, 18f, 0f));
             AddNode("Command HQ Rooftop", new Vector3(35f, 22f, 20f));
             AddNode("Helipad Extraction", new Vector3(50f, 18f, -40f));
             AddNode("Storage Warehouse", new Vector3(30f, 18f, -20f));
