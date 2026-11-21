@@ -34,6 +34,11 @@ namespace Operation1989.EditorScripts
         {
             string path = Work + "/request.txt";
             if (!File.Exists(path) || EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            if (EditorApplication.isPlaying)
+            {
+                EditorApplication.isPlaying = false;
+                return;
+            }
             string command = File.ReadAllText(path).Trim();
             File.Delete(path);
 
@@ -91,25 +96,36 @@ namespace Operation1989.EditorScripts
             dynamicWall.transform.localScale = new Vector3(20f, 10f, 1f);
             dynamicWall.layer = 0; // Default layer
 
-            // Player Setup (Load existing or generate test dummy)
-            GameObject player = null;
-            var playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Placeholders/PF_Player_Placeholder.prefab");
-            if (playerPrefab)
+            // Player Setup: Create Interactive First Person Player
+            var player = new GameObject("Player");
+            player.tag = "Player";
+            player.layer = 8; // Layer 8: Player
+            player.transform.position = new Vector3(0f, 0.1f, -22f);
+
+            var cc = player.AddComponent<CharacterController>();
+            cc.height = 1.8f;
+            cc.radius = 0.4f;
+            cc.center = new Vector3(0f, 0.9f, 0f);
+
+            var combatHealth = player.AddComponent<CombatHealth>();
+            var rifle = player.AddComponent<RifleWeapon>();
+            rifle.playerWeapon = true;
+
+            // Attach Main Camera to Player at eye level
+            var mainCam = Camera.main;
+            if (!mainCam)
             {
-                player = (GameObject)PrefabUtility.InstantiatePrefab(playerPrefab);
-                player.name = "Player";
-                player.transform.position = new Vector3(0f, 1f, -15f);
+                var camObj = new GameObject("Main Camera");
+                mainCam = camObj.AddComponent<Camera>();
+                camObj.AddComponent<AudioListener>();
             }
-            else
-            {
-                player = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-                player.name = "Player";
-                player.tag = "Player";
-                player.layer = 8;
-                player.transform.position = new Vector3(0f, 1f, -15f);
-                player.AddComponent<CombatHealth>();
-                player.AddComponent<RifleWeapon>();
-            }
+            mainCam.transform.SetParent(player.transform, false);
+            mainCam.transform.localPosition = new Vector3(0f, 1.6f, 0.15f);
+            mainCam.transform.localRotation = Quaternion.identity;
+
+            var testController = player.AddComponent<TestPlayerController>();
+            testController.playerCamera = mainCam;
+            testController.rifle = rifle;
 
             // Instantiate Tactical Drone
             var droneInstance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
