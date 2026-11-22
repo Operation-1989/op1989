@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 using Operation1989.AI.InferenceEngine;
 using Operation1989.Interaction.AI;
@@ -6,18 +5,14 @@ using Operation1989.Interaction.AI;
 namespace Operation1989.AI.Drone
 {
     /// <summary>
-    /// Handles tactical combat engagement, dynamic spotlight targeting, and base alert dispatching.
-    /// Manages searchlight color changes (Patrol=Cyan, Investigate=Yellow, Engage=Red) and hitscan suppression bursts.
+    /// Handles hitscan combat engagement and base alert dispatching without tracking visuals.
     /// </summary>
     [DisallowMultipleComponent]
     public class TacticalDroneCombat : MonoBehaviour
     {
-        [Header("Spotlight Configuration")]
-        [SerializeField] private Light searchlight;
-        [SerializeField] private Color patrolColor = new Color(0.92f, 0.95f, 1f); // Natural Soft White (subtle, non-disturbing)
-        [SerializeField] private Color investigateColor = new Color(1f, 0.85f, 0.1f); // Amber Yellow
-        [SerializeField] private Color engageColor = new Color(1f, 0.1f, 0.1f); // Hostile Red
-        [Range(2f, 25f)] [SerializeField] private float lightAimSpeed = 10f;
+        // Retain legacy references so existing prefabs can shut their tracking visuals off.
+        [SerializeField, HideInInspector] private Light searchlight;
+        [SerializeField, HideInInspector] private LineRenderer laserTracer;
 
         [Header("Weapon Systems")]
         [SerializeField] private Transform muzzlePoint;
@@ -26,16 +21,13 @@ namespace Operation1989.AI.Drone
         [SerializeField] private int burstSize = 4;
         [SerializeField] private float burstCooldown = 1.5f;
 
-        [Header("Audio & FX")]
+        [Header("Audio")]
         [SerializeField] private AudioClip fireAudioClip;
-        [SerializeField] private LineRenderer laserTracer;
 
         private AudioSource audioSource;
         private DroneDamage damageHandler;
         private float nextFireTime = 0f;
         private int currentBurstCount = 0;
-        private Vector3 targetAimPosition;
-        private bool isTrackingTarget = false;
 
         private void Awake()
         {
@@ -49,80 +41,34 @@ namespace Operation1989.AI.Drone
                 audioSource.maxDistance = 80f;
             }
 
-            if (!searchlight)
-            {
-                searchlight = GetComponentInChildren<Light>();
-            }
+            // Imported drone models can contain directional lights. Those rotate with the
+            // aircraft and relight the entire scene, so all flight illumination stays off.
+            foreach (var pulse in GetComponentsInChildren<AircraftLightPulse>(true))
+                pulse.source = null;
+            foreach (var lamp in GetComponentsInChildren<Light>(true))
+                lamp.enabled = false;
 
-            if (!laserTracer)
-            {
-                var tracerObj = new GameObject("DroneLaserTracer");
-                tracerObj.transform.SetParent(transform, false);
-                laserTracer = tracerObj.AddComponent<LineRenderer>();
-                laserTracer.positionCount = 2;
-                laserTracer.startWidth = 0.08f;
-                laserTracer.endWidth = 0.04f;
-                laserTracer.enabled = false;
-                laserTracer.material = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
-                laserTracer.material.color = Color.red;
-            }
-
-            SetSearchlightColor(patrolColor);
+            DisableTrackingVisuals();
         }
 
-        public void SetSearchlightForTesting(Light light)
-        {
-            searchlight = light;
-        }
-
-        public void SetAimTarget(Vector3 aimPos, bool active)
-        {
-            targetAimPosition = aimPos;
-            isTrackingTarget = active;
-        }
-
-        public void SetSearchlightState(InferredAction action)
+        private void DisableTrackingVisuals()
         {
             if (!searchlight)
             {
-                var searchlightTrans = transform.Find("TacticalSearchlight");
-                if (searchlightTrans) searchlight = searchlightTrans.GetComponent<Light>();
-                if (!searchlight) searchlight = GetComponentInChildren<Light>();
-                if (!searchlight) return;
+                var lightTransform = transform.Find("TacticalSearchlight");
+                if (lightTransform) searchlight = lightTransform.GetComponent<Light>();
             }
-
-            switch (action)
-            {
-                case InferredAction.EngageRangedCombat:
-                    SetSearchlightColor(engageColor);
-                    searchlight.intensity = 4.0f;
-                    break;
-                case InferredAction.InvestigateLastKnownPos:
-                    SetSearchlightColor(investigateColor);
-                    searchlight.intensity = 2.5f;
-                    break;
-                default:
-                    SetSearchlightColor(patrolColor);
-                    searchlight.intensity = 1.2f;
-                    break;
-            }
+            if (searchlight) searchlight.enabled = false;
+            if (laserTracer) laserTracer.enabled = false;
+            var legacyTracer = transform.Find("DroneLaserTracer");
+            if (legacyTracer) legacyTracer.gameObject.SetActive(false);
         }
 
         public void ShutDownAllCombatSystems()
         {
-            if (searchlight) searchlight.enabled = false;
-            if (laserTracer) laserTracer.enabled = false;
+            DisableTrackingVisuals();
             if (audioSource && audioSource.isPlaying) audioSource.Stop();
-            isTrackingTarget = false;
             enabled = false;
-        }
-
-        private void SetSearchlightColor(Color color)
-        {
-            if (searchlight)
-            {
-                searchlight.color = Color.Lerp(searchlight.color, color, Time.deltaTime * 5f);
-            }
         }
 
         private void Update()
@@ -130,39 +76,11 @@ namespace Operation1989.AI.Drone
             if (damageHandler && damageHandler.Destroyed)
             {
                 ShutDownAllCombatSystems();
-                return;
-            }
-
-            UpdateSearchlightAim();
-            if (laserTracer && laserTracer.enabled && Time.time > nextFireTime - 0.08f)
-            {
-                laserTracer.enabled = false;
-            }
-        }
-
-        private void UpdateSearchlightAim()
-        {
-            if (!searchlight) return;
-
-            if (isTrackingTarget)
-            {
-                Vector3 dir = (targetAimPosition - searchlight.transform.position).normalized;
-                if (dir.sqrMagnitude > 0.001f)
-                {
-                    Quaternion targetRot = Quaternion.LookRotation(dir);
-                    searchlight.transform.rotation = Quaternion.Slerp(searchlight.transform.rotation, targetRot, Time.deltaTime * lightAimSpeed);
-                }
-            }
-            else
-            {
-                // Default downwards tilt forward
-                Quaternion neutral = Quaternion.Euler(60f, transform.eulerAngles.y, 0f);
-                searchlight.transform.rotation = Quaternion.Slerp(searchlight.transform.rotation, neutral, Time.deltaTime * 2f);
             }
         }
 
         /// <summary>
-        /// Fires suppressive laser pulse towards target.
+        /// Fires a suppressive hitscan burst towards the target.
         /// </summary>
         public void FireSuppressiveBurst(Transform target)
         {
@@ -174,23 +92,13 @@ namespace Operation1989.AI.Drone
             Vector3 aimDir = (targetCenter - origin).normalized;
 
             // Hitscan trace
-            Vector3 hitPoint = origin + aimDir * 50f;
             if (Physics.Raycast(origin, aimDir, out RaycastHit hit, 50f, ~0, QueryTriggerInteraction.Ignore))
             {
-                hitPoint = hit.point;
                 var health = hit.collider.GetComponentInParent<CombatHealth>();
                 if (health)
                 {
                     health.TakeDamage(damagePerShot);
                 }
-            }
-
-            // Visual Tracer
-            if (laserTracer)
-            {
-                laserTracer.SetPosition(0, origin);
-                laserTracer.SetPosition(1, hitPoint);
-                laserTracer.enabled = true;
             }
 
             if (fireAudioClip && audioSource)

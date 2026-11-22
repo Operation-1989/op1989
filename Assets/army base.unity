@@ -7986,7 +7986,7 @@ Light:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 127796396}
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 0.08, g: 1, b: 0.22, a: 1}
@@ -35735,7 +35735,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AircraftLightPulse
   pattern: 0
-  source: {fileID: 127796399}
+  source: {fileID: 0}
   lens: {fileID: 1579663693}
   color: {r: 0.08, g: 1, b: 0.22, a: 1}
   period: 1.2
@@ -38354,7 +38354,7 @@ Light:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 650456040}
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 1, g: 0.04, b: 0.02, a: 1}
@@ -40611,7 +40611,7 @@ Light:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 680545214}
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 0.08, g: 1, b: 0.22, a: 1}
@@ -45804,7 +45804,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AircraftLightPulse
   pattern: 0
-  source: {fileID: 680545217}
+  source: {fileID: 0}
   lens: {fileID: 806170035}
   color: {r: 0.08, g: 1, b: 0.22, a: 1}
   period: 1.2
@@ -50981,7 +50981,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AircraftLightPulse
   pattern: 0
-  source: {fileID: 650456043}
+  source: {fileID: 0}
   lens: {fileID: 1620481406}
   color: {r: 1, g: 0.04, b: 0.02, a: 1}
   period: 1.2
@@ -60487,7 +60487,7 @@ Light:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 953009934}
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 13
   m_Type: 0
   m_Color: {r: 1, g: 0.85, b: 0.68, a: 1}
@@ -88495,7 +88495,7 @@ Light:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1399003597}
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 1, g: 0.04, b: 0.02, a: 1}
@@ -113704,7 +113704,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AircraftLightPulse
   pattern: 0
-  source: {fileID: 1399003600}
+  source: {fileID: 0}
   lens: {fileID: 867084149}
   color: {r: 1, g: 0.04, b: 0.02, a: 1}
   period: 1.2
