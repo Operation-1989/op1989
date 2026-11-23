@@ -56,10 +56,10 @@ public static class PatrolCombatValidation
                     floor=GameObject.CreatePrimitive(PrimitiveType.Cube);floor.name="Temporary combat test floor";floor.transform.position=new Vector3(300,9,300);floor.transform.localScale=new Vector3(100,1,100);
                     Teleport(p.transform,new Vector3(300,10.55f,280),Quaternion.identity);p.firstPersonCamera.transform.localRotation=Quaternion.identity;
                     Teleport(guard.transform,new Vector3(300,9.6f,305),Quaternion.Euler(0,180,0));
-                    advanceStart=guard.transform.position;guard.ResetPatrol();guard.Alert();until=Time.time+2;stage=2;break;
+                    advanceStart=guard.transform.position;guard.ResetPatrol();guard.Alert();until=Time.time+5;stage=2;break;
                 case 2:
                     if(Time.time<until)break;
-                    Check("Short advance then ranged fire",guard.State=="Fire" && guard.AdvancedDistance<=4.1f && Vector3.Distance(advanceStart,guard.transform.position)<=4.2f);
+                    Check("Chase then ranged fire",guard.State=="Fire" && Vector3.Distance(guard.transform.position,p.transform.position)<guard.minimumDistance+2);
                     Check("Guard fired real shots",guard.GetComponent<RifleWeapon>().ShotsFired>0);
                     guard.enabled=false;p.GetComponent<CombatHealth>().Restore();
                     Teleport(guard.transform,new Vector3(300,9.6f,305),Quaternion.Euler(0,180,0));

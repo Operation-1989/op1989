@@ -14,7 +14,7 @@ public sealed class BarricadePatrolSoldier : MonoBehaviour
     RifleWeapon rifle;
     CombatHealth targetHealth;
     int waypoint,burst;
-    float lastSeen=-100,waitUntil,nextShot,advanceUntil;
+    float lastSeen=-100,waitUntil,nextShot;
     Vector3 previous;
 
     void Awake()
@@ -25,7 +25,7 @@ public sealed class BarricadePatrolSoldier : MonoBehaviour
     public void ResetPatrol(){State="Patrol";AdvancedDistance=0;waypoint=burst=0;lastSeen=-100;waitUntil=nextShot=0;previous=transform.position;}
     public void Alert()
     {
-        if(State=="Patrol") {State="Advance";AdvancedDistance=0;advanceUntil=Time.time+1.25f;}
+        if(State=="Patrol") {State="Chase";AdvancedDistance=0;}
         lastSeen=Time.time;
     }
     Vector3 Target=>player.position+Vector3.up*.45f;
@@ -55,26 +55,30 @@ public sealed class BarricadePatrolSoldier : MonoBehaviour
         else
         {
             var delta=player.position-transform.position;delta.y=0;Face(delta);
-            if(State=="Advance")
+            if(State=="Chase")
             {
-                float budget=Mathf.Min(maximumAdvance-AdvancedDistance,delta.magnitude-minimumDistance);
-                if(visible && budget>.05f && Time.time<advanceUntil)
-                    move=delta.normalized*Mathf.Min(runSpeed,budget/Mathf.Max(Time.deltaTime,.001f));
+                if(visible && delta.magnitude>minimumDistance)
+                    move=delta.normalized*Mathf.Min(runSpeed,(delta.magnitude-minimumDistance)/Mathf.Max(Time.deltaTime,.001f));
                 else State="Fire";
             }
-            if(State=="Fire" && visible && Time.time>=nextShot && Vector3.Angle(transform.forward,delta)<12)
+            if(State=="Fire")
             {
-                Vector3 origin=rifle.muzzle?rifle.muzzle.position:transform.position+Vector3.up*1.4f;
-                Vector3 aim=Target+Random.insideUnitSphere*.6f;
-                rifle.Shoot(origin,(aim-origin).normalized);animator.SetTrigger("Fire");
-                burst++;nextShot=Time.time+(burst%3==0?1.1f:shotInterval);
+                if(visible && delta.magnitude>minimumDistance*1.5f)
+                    State="Chase";
+                else if(visible && Time.time>=nextShot && Vector3.Angle(transform.forward,delta)<12)
+                {
+                    Vector3 origin=rifle.muzzle?rifle.muzzle.position:transform.position+Vector3.up*1.4f;
+                    Vector3 aim=Target+Random.insideUnitSphere*.6f;
+                    rifle.Shoot(origin,(aim-origin).normalized);animator.SetTrigger("Fire");
+                    burst++;nextShot=Time.time+(burst%3==0?1.1f:shotInterval);
+                }
             }
             if(Time.time-lastSeen>5 || !active) {State="Patrol";waitUntil=0;}
         }
         controller.Move((move+Vector3.down*2)*Time.deltaTime);
         Vector3 movement=transform.position-previous;movement.y=0;
-        if(State=="Advance")AdvancedDistance+=movement.magnitude;
-        if(animator)animator.SetFloat("Speed",movement.magnitude>.001f?(State=="Advance"?2:1):0,.12f,Time.deltaTime);
+        if(State=="Chase")AdvancedDistance+=movement.magnitude;
+        if(animator)animator.SetFloat("Speed",movement.magnitude>.001f?(State=="Chase"?2:1):0,.12f,Time.deltaTime);
         previous=transform.position;
     }
     void Face(Vector3 direction){if(direction.sqrMagnitude>.01f)transform.rotation=Quaternion.RotateTowards(transform.rotation,Quaternion.LookRotation(direction),240*Time.deltaTime);}
