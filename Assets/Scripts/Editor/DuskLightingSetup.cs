@@ -194,6 +194,7 @@ public static class DuskLightingSetup
             var search = AddLight(group, "Downward survey light", new Vector3(b.center.x, b.min.y - .1f, b.center.z), LightType.Spot, 6, 25, false);
             search.transform.localRotation = Quaternion.Euler(90, 0, 0);
             search.spotAngle = 58;
+            foreach (var lamp in group.GetComponentsInChildren<Light>(true)) lamp.enabled = false;
             var pad = drone.launchPoint.parent;
             for (int x = -1; x <= 1; x += 2)
                 for (int z = -1; z <= 1; z += 2)

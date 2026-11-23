@@ -32,6 +32,14 @@ public sealed class DroneMapPatrol : MonoBehaviour
     {
         // Also upgrade drones already saved in scenes before DroneDamage was introduced.
         if (!GetComponent<DroneDamage>()) gameObject.AddComponent<DroneDamage>();
+
+        // Flight lights must not sweep over the environment or compete with its lighting.
+        // Keep navigation lenses visible, but disconnect their pulsing illumination.
+        foreach (var pulse in GetComponentsInChildren<AircraftLightPulse>(true))
+            pulse.source = null;
+        foreach (var lamp in GetComponentsInChildren<Light>(true))
+            lamp.enabled = false;
+        // DroneDamage creates its brief impact/fire lights later, independently of flight.
     }
 
     void OnEnable() => ResetFlight();

@@ -24,9 +24,6 @@ namespace Operation1989.AI.Drone
         [SerializeField] private int[] patrolNodeSequence;
         [SerializeField] private float searchDurationAtLkp = 5.0f;
 
-        [Header("Debug & VIVA Presentation")]
-        [SerializeField] private bool showDebugOverlay = true;
-
         public InferredAction CurrentAction => inferenceEngine ? inferenceEngine.CurrentAction : InferredAction.PatrolWaypoints;
         public int CurrentPatrolIndex { get; private set; }
 
@@ -87,7 +84,6 @@ namespace Operation1989.AI.Drone
             }
 
             InferredAction action = inferenceEngine.CurrentAction;
-            combat.SetSearchlightState(action);
 
             switch (action)
             {
@@ -111,7 +107,6 @@ namespace Operation1989.AI.Drone
             if (!perception.TargetPlayer) return;
 
             Vector3 playerPos = perception.TargetPlayer.position;
-            combat.SetAimTarget(playerPos, true);
 
             // Aim rotation towards player
             Vector3 aimDir = (playerPos - transform.position).normalized;
@@ -139,7 +134,6 @@ namespace Operation1989.AI.Drone
         private void ExecuteInvestigateAction()
         {
             Vector3 lkp = perception.LastKnownPosition;
-            combat.SetAimTarget(lkp, true);
 
             // Plan A* path to the node closest to LKP if not already traveling there
             int targetNode = navGraph.GetNearestNode(lkp);
@@ -152,11 +146,6 @@ namespace Operation1989.AI.Drone
             if (!movement.IsMoving)
             {
                 searchTimer += Time.deltaTime;
-                // Sweep searchlight in an area circle
-                float angle = searchTimer * 90f * Mathf.Deg2Rad;
-                Vector3 sweepOffset = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * 6.0f;
-                combat.SetAimTarget(lkp + sweepOffset, true);
-
                 if (searchTimer >= searchDurationAtLkp)
                 {
                     searchTimer = 0f;
@@ -168,7 +157,6 @@ namespace Operation1989.AI.Drone
 
         private void ExecutePatrolAction()
         {
-            combat.SetAimTarget(Vector3.zero, false);
             searchTimer = 0f;
 
             if (!movement.IsMoving)
@@ -224,47 +212,5 @@ namespace Operation1989.AI.Drone
             }
         }
 
-        /// <summary>
-        /// Live GUI overlay for the VIVA presentation.
-        /// Demonstrates live Knowledge Base facts, Forward Chaining rule fired, and A* statistics.
-        /// </summary>
-        private void OnGUI()
-        {
-            if (!showDebugOverlay) return;
-
-            if (damageHandler && damageHandler.Destroyed)
-            {
-                GUILayout.BeginArea(new Rect(15, 15, 380, 70), "Tactical Drone AI Telemetry", GUI.skin.window);
-                GUILayout.Label("<color=red><b>DRONE STATUS: NEUTRALIZED / OFFLINE</b></color>");
-                GUILayout.Label("Sensors, flight engines, and combat lasers terminated.");
-                GUILayout.EndArea();
-                return;
-            }
-
-            GUILayout.BeginArea(new Rect(15, 15, 420, 260), "Tactical Drone AI Telemetry (Student 2)", GUI.skin.window);
-
-            GUILayout.Label($"<b>Action:</b> <color=yellow>{CurrentAction}</color>");
-            GUILayout.Label($"<b>Active Rule:</b> {inferenceEngine.ActiveRuleName}");
-            GUILayout.Label($"<b>Rule Logic:</b> {inferenceEngine.RuleExplanation}");
-
-            GUILayout.Space(5);
-            GUILayout.Label($"<b>Visual:</b> {(perception.CanSeePlayer ? "<color=red>SPOTTED</color>" : "<color=green>CLEAR</color>")}" +
-                            $" | <b>Cover:</b> {(perception.IsPlayerInCover ? "<color=yellow>IN COVER</color>" : "NO")}" +
-                            $" | <b>LKP Confidence:</b> {perception.MemoryConfidence:P0}");
-            GUILayout.Label($"<b>Optical Status:</b> <color=cyan>{perception.Diagnostics}</color>");
-
-            GUILayout.Label($"<b>A* Nodes Explored:</b> {navGraph.LastNodesExploredCount}" +
-                            $" | <b>Target Node:</b> {(currentGoalNode >= 0 && currentGoalNode < navGraph.Nodes.Count ? navGraph.Nodes[currentGoalNode].label : "None")}");
-
-            // Knowledge Base Facts
-            var kb = KnowledgeBase.Instance;
-            if (kb)
-            {
-                string facts = string.Join(", ", kb.GetActiveFacts());
-                GUILayout.Label($"<b>KB Active Facts:</b> {facts}");
-            }
-
-            GUILayout.EndArea();
-        }
     }
 }

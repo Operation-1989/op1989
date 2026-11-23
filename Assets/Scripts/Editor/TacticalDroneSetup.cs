@@ -193,12 +193,13 @@ namespace Operation1989.EditorScripts
             col.size = new Vector3(2.5f, 0.8f, 2.5f);
             col.center = Vector3.zero;
 
-            // Searchlight
+            // Legacy searchlight stays off; optical detection does not need a light.
             var lightGo = new GameObject("TacticalSearchlight");
             lightGo.transform.SetParent(root.transform, false);
             lightGo.transform.localPosition = new Vector3(0f, -0.3f, 0.5f);
             lightGo.transform.localRotation = Quaternion.Euler(60f, 0f, 0f);
             var spot = lightGo.AddComponent<Light>();
+            spot.enabled = false;
             spot.type = LightType.Spot;
             spot.range = 45f;
             spot.spotAngle = 40f;

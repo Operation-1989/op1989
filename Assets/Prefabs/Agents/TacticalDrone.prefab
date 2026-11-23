@@ -272,10 +272,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Operation1989.AI.Drone.TacticalDroneCombat
   searchlight: {fileID: 0}
-  patrolColor: {r: 0.92, g: 0.95, b: 1, a: 1}
-  investigateColor: {r: 1, g: 0.85, b: 0.1, a: 1}
-  engageColor: {r: 1, g: 0.1, b: 0.1, a: 1}
-  lightAimSpeed: 10
   muzzlePoint: {fileID: 0}
   damagePerShot: 15
   fireRate: 0.2
@@ -297,7 +293,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Operation1989.AI.Drone.TacticalDroneController
   patrolNodeSequence: 
   searchDurationAtLkp: 5
-  showDebugOverlay: 1
 --- !u!1 &6236557766713916485
 GameObject:
   m_ObjectHideFlags: 0
@@ -368,7 +363,7 @@ Light:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6331768700679034762}
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 13
   m_Type: 0
   m_Color: {r: 0.92, g: 0.95, b: 1, a: 1}

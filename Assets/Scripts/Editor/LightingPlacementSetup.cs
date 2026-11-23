@@ -252,7 +252,8 @@ public static class LightingPlacementSetup
             var color = side < 0 ? new Color(1, .04f, .02f) : new Color(.08f, 1, .22f);
             var lens = Shape(fitting, "Corner LED lens", Vector3.down * .01f, new Vector3(.065f, .014f, .065f), side < 0 ? red : green);
             var light = LightAt(fitting, "Corner navigation glow", Vector3.down * .025f, color, .4f, 1.6f, false);
-            var pulse = fitting.gameObject.AddComponent<AircraftLightPulse>(); pulse.source = light; pulse.lens = lens; pulse.color = color;
+            light.enabled = false;
+            var pulse = fitting.gameObject.AddComponent<AircraftLightPulse>(); pulse.lens = lens; pulse.color = color;
             pulse.pattern = AircraftLightPulse.Pattern.NavigationPulse; pulse.phaseOffset = end < 0 ? .6f : 0;
             mounts.Add($"DRONE {fitting.name} motor underside={b.min.y:F3} fitting={position:F3}");
         }
@@ -261,6 +262,7 @@ public static class LightingPlacementSetup
         Shape(landing, "Landing lamp mount", Vector3.zero, new Vector3(.16f, .04f, .16f), metal);
         Shape(landing, "Landing lamp lens", Vector3.down * .025f, new Vector3(.13f, .008f, .13f), warm, PrimitiveType.Cylinder);
         var beam = LightAt(landing, "Downward survey light", Vector3.down * .045f, Warm, 65, 45, true);
+        beam.enabled = false;
         beam.transform.localRotation = Quaternion.Euler(90, 0, 0); beam.spotAngle = 48; beam.innerSpotAngle = 32;
         var pad = drone.launchPoint.parent; var deck = pad.GetComponentsInChildren<Renderer>().FirstOrDefault(r => r.name.Contains("Raised landing deck"));
         if (deck)
@@ -556,12 +558,12 @@ public static class LightingPlacementSetup
     static void Validate()
     {
         var drone = Object.FindAnyObjectByType<DroneMapPatrol>(); var rig = drone.transform.Find("Dusk Drone Lights");
-        var pulses = rig.GetComponentsInChildren<AircraftLightPulse>(); var landing = rig.GetComponentsInChildren<Light>().First(l => l.name == "Downward survey light");
+        var pulses = rig.GetComponentsInChildren<AircraftLightPulse>();
         var road = Find("Road and path lamps").GetComponentsInChildren<Light>();
         var report = new StringBuilder();
         report.AppendLine($"{(!Find("Sci Fi Conference").activeSelf ? "PASS" : "FAIL")} Meeting table, chairs and displays hidden together");
         report.AppendLine($"{(pulses.Length == 4 ? "PASS" : "FAIL")} Four motor-mounted drone corner lights");
-        report.AppendLine($"{(landing.intensity == 65 ? "PASS" : "FAIL")} Landing light intensity={landing.intensity}, range={landing.range}");
+        report.AppendLine($"{(rig.GetComponentsInChildren<Light>(true).All(l => !l.enabled) && pulses.All(p => !p.source) ? "PASS" : "FAIL")} Drone flight illumination disabled; navigation pulses affect lenses only");
         report.AppendLine($"{(road.All(l => l.intensity == 9.5f) ? "PASS" : "FAIL")} Road lighting increased from 5.5 to 9.5; lamps={road.Length}");
         report.AppendLine($"Existing hangar pendants lit={Find("Hangar overhead lighting").GetComponentsInChildren<Light>().Length}; suspended rectangular bars={Object.FindObjectsByType<Transform>().Count(t => t.name == "Suspended hangar luminaire")}");
         report.AppendLine($"Surface-mounted facade lights={Object.FindObjectsByType<Light>().Count(l => l.name == "Facade downlight")}");
@@ -603,7 +605,8 @@ public static class LightingPlacementSetup
         try
         {
             var drone = Object.FindAnyObjectByType<DroneMapPatrol>(); var jeep = Object.FindAnyObjectByType<BaseRoadJeepPatrol>();
-            File.WriteAllText(Work + "/playmode.txt", $"{(states.Count >= 8 && states.Values.All(v => v == 3) ? "PASS" : "FAIL")} All {states.Count} drone and helicopter flashing channels switch on and off\nDrone cruise={drone.Cruising}; position={drone.transform.position}; jeep distance={jeep.DistanceTravelled:F1}; blockedBy={jeep.BlockedBy}\n");
+            File.WriteAllText(Work + "/playmode.txt", $"{(states.Count > 0 && states.Values.All(v => v == 3) ? "PASS" : "FAIL")} All {states.Count} helicopter illumination channels switch on and off\nDrone cruise={drone.Cruising}; position={drone.transform.position}; jeep distance={jeep.DistanceTravelled:F1}; blockedBy={jeep.BlockedBy}\n");
+            File.AppendAllText(Work + "/playmode.txt", $"{(drone.GetComponentsInChildren<Light>(true).All(l => !l.enabled) && drone.GetComponentsInChildren<AircraftLightPulse>(true).All(p => !p.source) ? "PASS" : "FAIL")} Drone has no active flight illumination or pulsing light sources\n");
             var table = Find("Sci Fi Conference");
             File.AppendAllText(Work + "/playmode.txt", $"{(!table.activeInHierarchy && table.GetComponentsInChildren<Renderer>(true).All(r => !r.gameObject.activeInHierarchy) ? "PASS" : "FAIL")} Table and all meeting chairs absent from gameplay\n");
             Previews();

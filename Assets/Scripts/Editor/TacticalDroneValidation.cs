@@ -163,13 +163,12 @@ namespace Operation1989.EditorScripts
             var spot = lightGo.AddComponent<Light>();
             spot.type = LightType.Spot;
             var combat = combatGo.AddComponent<TacticalDroneCombat>();
-            combat.SetSearchlightForTesting(spot);
-
-            combat.SetSearchlightState(InferredAction.PatrolWaypoints);
-            AssertTest("Searchlight State (Patrol)", spot.intensity > 0, "Spotlight active in patrol state.");
-
-            combat.SetSearchlightState(InferredAction.EngageRangedCombat);
-            AssertTest("Searchlight State (Engage)", spot.intensity >= 4.0f, "Spotlight boosted to high-intensity engage mode.");
+            // Initialize explicitly because this harness can also run outside Play Mode.
+            combat.SendMessage("Awake");
+            AssertTest("Tracking spotlight disabled", !spot.enabled,
+                "Tactical tracking does not illuminate or recolor the environment.");
+            AssertTest("No laser tracer created", combatGo.GetComponentInChildren<LineRenderer>(true) == null,
+                "Combat initialization creates no laser visual.");
 
             UnityEngine.Object.DestroyImmediate(combatGo);
 
