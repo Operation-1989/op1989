@@ -53,6 +53,7 @@ public sealed class IntelTheftMission : MonoBehaviour
     float downloadElapsed;
     GUIStyle title, text, small, marker;
     readonly ObjectiveCompassHud compass = new ObjectiveCompassHud();
+    readonly DroneThreatHud droneThreat = new DroneThreatHud();
     readonly TerminalInteractionPopup terminalPopup = new TerminalInteractionPopup();
     public float CompassHeading
     {
@@ -208,6 +209,7 @@ public sealed class IntelTheftMission : MonoBehaviour
         {
             compass.Draw(width, CompassHeading, ObjectiveBearing, ObjectiveDistance,
                 State == Phase.Escape ? ObjectiveGlow.Cyan : ObjectiveGlow.Amber, CompassInstruction);
+            droneThreat.Draw(playerCamera, width, height);
         }
         GUI.matrix = previous;
         GUI.color = previousColor;
@@ -226,5 +228,5 @@ public sealed class IntelTheftMission : MonoBehaviour
         terminalPopup.Show(transform, heading, body, State == Phase.Downloading ? DownloadProgress : -1);
     }
     void OnDisable() => terminalPopup.Hide();
-    void OnDestroy() { compass.Dispose(); terminalPopup.Dispose(); }
+    void OnDestroy() { compass.Dispose(); droneThreat.Dispose(); terminalPopup.Dispose(); }
 }

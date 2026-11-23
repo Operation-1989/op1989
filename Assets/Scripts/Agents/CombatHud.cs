@@ -96,3 +96,95 @@ public sealed class CombatHud
         GUI.matrix = matrix;
     }
 }
+
+/// <summary>Player-facing drone warning and a glowing ring around its screen position.</summary>
+public sealed class DroneThreatHud
+{
+    static readonly Color Red = new Color(1f, .22f, .18f);
+    Operation1989.AI.Drone.TacticalDroneController drone;
+    DroneDamage damage;
+    float nextSearch;
+    GUIStyle title, instruction;
+    Texture2D ring;
+
+    bool FindDrone()
+    {
+        if (drone && drone.isActiveAndEnabled && damage && !damage.Destroyed) return true;
+        if (Time.unscaledTime < nextSearch) return false;
+        nextSearch = Time.unscaledTime + 1f;
+        drone = null;
+        damage = null;
+        foreach (var candidate in Object.FindObjectsByType<Operation1989.AI.Drone.TacticalDroneController>())
+        {
+            var health = candidate.GetComponent<DroneDamage>();
+            if (!candidate.isActiveAndEnabled || !health || health.Destroyed) continue;
+            drone = candidate;
+            damage = health;
+            return true;
+        }
+        return false;
+    }
+
+    void Styles()
+    {
+        if (title != null) return;
+        title = MissionHudStyle.Label(MissionHudStyle.Semibold, 16, Red);
+        instruction = MissionHudStyle.Label(MissionHudStyle.Regular, 12, new Color(.94f, .91f, .89f));
+        title.alignment = instruction.alignment = TextAnchor.MiddleCenter;
+        const int size = 128;
+        ring = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            name = "Drone identification ring", hideFlags = HideFlags.HideAndDontSave,
+            wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear
+        };
+        var pixels = new Color32[size * size];
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float radius = Vector2.Distance(new Vector2(x + .5f, y + .5f), Vector2.one * 64);
+                float distance = Mathf.Abs(radius - 46);
+                float stroke = Mathf.Clamp01(2.5f - distance);
+                float glow = Mathf.Exp(-distance * distance / 40f) * .4f;
+                pixels[y * size + x] = new Color(1, 1, 1, Mathf.Max(stroke, glow));
+            }
+        ring.SetPixels32(pixels);
+        ring.Apply(false, true);
+    }
+
+    public void Draw(Camera camera, float width, float height)
+    {
+        if (!camera || !FindDrone()) return;
+        Styles();
+        var banner = new Rect((width - 600) * .5f, 132, 600, 64);
+        MissionHudStyle.Card(banner);
+        MissionHudStyle.Fill(new Rect(banner.x, banner.y, 3, banner.height), Red);
+        GUI.Label(new Rect(banner.x + 16, banner.y + 8, banner.width - 32, 24), "SHOOT DOWN THE DRONE", title);
+        GUI.Label(new Rect(banner.x + 16, banner.y + 33, banner.width - 32, 21),
+            "It alerts the patrol jeep to intruders. Shoot the drone marked by the red circle.", instruction);
+
+        var collider = drone.GetComponent<Collider>();
+        Bounds bounds = collider ? collider.bounds : new Bounds(drone.transform.position, Vector3.one * 2);
+        Vector3 view = camera.WorldToViewportPoint(bounds.center);
+        if (view.z <= camera.nearClipPlane || view.x < 0 || view.x > 1 || view.y < 0 || view.y > 1) return;
+        Vector2 center = new Vector2(view.x * width, (1f - view.y) * height);
+        float radius = 0;
+        for (int corner = 0; corner < 8; corner++)
+        {
+            Vector3 offset = Vector3.Scale(bounds.extents, new Vector3(
+                (corner & 1) == 0 ? -1 : 1, (corner & 2) == 0 ? -1 : 1, (corner & 4) == 0 ? -1 : 1));
+            Vector3 projected = camera.WorldToViewportPoint(bounds.center + offset);
+            if (projected.z <= camera.nearClipPlane) continue;
+            Vector2 point = new Vector2(projected.x * width, (1f - projected.y) * height);
+            radius = Mathf.Max(radius, Vector2.Distance(center, point));
+        }
+        // Leave the target visible inside a hollow ring, with space for its soft glow.
+        radius = Mathf.Clamp(radius + 6, 22, 96);
+        float halfSize = radius * 64f / 46f;
+        var color = GUI.color;
+        GUI.color = Red;
+        GUI.DrawTexture(new Rect(center.x - halfSize, center.y - halfSize, halfSize * 2, halfSize * 2), ring);
+        GUI.color = color;
+    }
+
+    public void Dispose() { if (ring) Object.Destroy(ring); }
+}
