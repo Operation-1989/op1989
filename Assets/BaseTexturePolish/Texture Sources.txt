@@ -1,0 +1,16 @@
+Army base texture polish
+
+Generated using the built-in imagegen tool:
+Textures/Aircraft Painted Metal.png
+Prompt: Seamless tileable PBR base-color texture of neutral very light gray matte painted aircraft aluminum; subtle military helicopter paint weathering, fine grain, sparse hairline scratches, low contrast. Flat orthographic surface scan with even diffuse illumination, no shadows, highlights, panel boundaries, rivets, objects, text or markings. Neutral tone for material tinting.
+
+Textures/Foliage Cutout.png
+Prompt: Turn the existing broadleaf branch reference into a realistic game foliage cutout. Preserve upright branching arrangement and leaf coverage; natural detailed green leaves with fine veins and brown twigs. Remove olive background and rectangular collage artifacts, including between leaves. Clean transparent alpha in all gaps and along silhouettes. Flat orthographic scan, soft even diffuse illumination; no sky, ground, text, border or cast shadows.
+
+Reused project assets:
+Flooded_Grounds/Content/Trees/SrcTextures/FOL_Trunk3_D.tif and FOL_Trunk3_N.tif for bark.
+Flooded_Grounds/Content/Textures/DET_Concrete1_A.tif and DET_Concrete1_N.tif for helipad concrete.
+IntroTruck/Materials/Truck Tire Rubber.png for helicopter rubber, interior and blade material slots.
+Existing textured helicopter skins, glass, lights and rotor blur materials were retained.
+
+Only scene renderer assignments use these new materials; original shared materials and source models were not replaced.
