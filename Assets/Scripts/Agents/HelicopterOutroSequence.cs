@@ -10,7 +10,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     public Renderer parkedBlades, flyingBlades, parkedTail, flyingTail;
     public AudioClip startupClip, chatterClip;
     public AudioClip outroMusic;
-    [Range(0, 1)] public float outroMusicVolume = .28f;
+    [Range(0, 1)] public float outroMusicVolume = .5f;
     [Range(0, 1)] public float approachEngineVolume = .45f;
     [Range(0, 1)] public float cabinEngineVolume = .2f;
     [Range(0, 1)] public float chatterVolume = .75f;

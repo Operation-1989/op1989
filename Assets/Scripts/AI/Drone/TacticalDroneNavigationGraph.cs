@@ -242,6 +242,111 @@ namespace Operation1989.AI.Drone
             return false; // Path not found (disconnected graph or blocked edges)
         }
 
+        public void ConfigureCruiseHeight(float height, float groundReference)
+        {
+            foreach (var node in nodes)
+            {
+                Vector3 point = node.position;
+                point.y = GroundHeightAt(point, groundReference) + Mathf.Max(3, height);
+                node.position = point;
+            }
+        }
+
+        public float GroundHeightAt(Vector3 point, float referenceY)
+        {
+            float best = referenceY, difference = float.PositiveInfinity;
+            bool knownGround = false;
+            foreach (var hit in Physics.RaycastAll(new Vector3(point.x, referenceY + 40f, point.z), Vector3.down, 80f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.transform.IsChildOf(transform) || hit.normal.y < .8f || PlayerTreePassage.IsTreeCollider(hit.collider) ||
+                    hit.collider.GetComponentInParent<CombatHealth>() || hit.collider.GetComponentInParent<DroneDamage>()) continue;
+                bool ground = hit.collider is TerrainCollider;
+                for (var parent = hit.transform; parent && !ground; parent = parent.parent)
+                    ground = parent.name == "Plane" || parent.name.StartsWith("Straight_Road", StringComparison.Ordinal);
+                float delta = Mathf.Abs(hit.point.y - referenceY);
+                if ((ground && !knownGround) || (ground == knownGround && delta < difference))
+                { best = hit.point.y; difference = delta; knownGround = ground; }
+            }
+            return best;
+        }
+
+        /// <summary>A* with live, sphere-cleared connections for the actual flight endpoints.</summary>
+        public bool FindFlightPath(Vector3 start, Vector3 goal, out List<Vector3> path)
+        {
+            path = new List<Vector3>();
+            // Low flight needs lateral waypoints around foliage/buildings, not only the
+            // authored high perimeter nodes. These points are local to this search.
+            var points = new List<Vector3>();
+            foreach (var node in nodes) points.Add(node.position);
+            Vector3 direct = goal - start;
+            if (direct.sqrMagnitude > .01f)
+            {
+                int mask = obstacleLayers.value == 0 ? ~0 : obstacleLayers.value;
+                var hits = Physics.SphereCastAll(start, .8f, direct.normalized, direct.magnitude, mask, QueryTriggerInteraction.Ignore);
+                Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+                var seen = new HashSet<Collider>();
+                foreach (var hit in hits)
+                {
+                    if (hit.transform.IsChildOf(transform) || !seen.Add(hit.collider)) continue;
+                    var bounds = hit.collider.bounds;
+                    if (bounds.size.x > 120 || bounds.size.z > 120) bounds = new Bounds(hit.point, new Vector3(16, 8, 16));
+                    bounds.Expand(new Vector3(4, 0, 4));
+                    foreach (int x in new[] { -1, 0, 1 })
+                        foreach (int z in new[] { -1, 0, 1 })
+                        {
+                            if (x == 0 && z == 0) continue;
+                            points.Add(new Vector3(bounds.center.x + x * bounds.extents.x, goal.y,
+                                bounds.center.z + z * bounds.extents.z));
+                        }
+                    if (seen.Count >= 6) break;
+                }
+            }
+            int first = points.Count; points.Add(start);
+            int last = points.Count; points.Add(goal);
+            int count = points.Count;
+            var positions = points.ToArray();
+            var cost = new float[count]; var parent = new int[count]; var closed = new bool[count];
+            for (int i = 0; i < count; i++) { cost[i] = float.PositiveInfinity; parent[i] = -1; }
+            cost[first] = 0;
+            var open = new List<int> { first };
+            LastNodesExploredCount = 0;
+            while (open.Count > 0)
+            {
+                int current = open[0];
+                foreach (int candidate in open)
+                    if (cost[candidate] + Vector3.Distance(positions[candidate], goal) < cost[current] + Vector3.Distance(positions[current], goal)) current = candidate;
+                open.Remove(current); closed[current] = true; LastNodesExploredCount++;
+                if (current == last)
+                {
+                    for (int i = last; i >= 0; i = parent[i]) path.Add(positions[i]);
+                    path.Reverse(); lastCalculatedPath = new List<Vector3>(path); return true;
+                }
+                for (int i = 0; i < count; i++)
+                {
+                    if (i == current || closed[i]) continue;
+                    float distance = Vector3.Distance(positions[current], positions[i]);
+                    if (distance > maxConnectionDistance && !(current == first && i == last)) continue;
+                    if (current < nodes.Count && i < nodes.Count && IsEdgeBlocked(current, i)) continue;
+                    if (cost[current] + distance >= cost[i] || !FlightSegmentClear(positions[current], positions[i])) continue;
+                    cost[i] = cost[current] + distance; parent[i] = current;
+                    if (!open.Contains(i)) open.Add(i);
+                }
+            }
+            return false;
+        }
+
+        bool FlightSegmentClear(Vector3 from, Vector3 to)
+        {
+            Vector3 delta = to - from;
+            if (delta.sqrMagnitude < .001f) return true;
+            int mask = obstacleLayers.value == 0 ? ~0 : obstacleLayers.value;
+            foreach (var hit in Physics.SphereCastAll(from, .8f, delta.normalized, delta.magnitude, mask, QueryTriggerInteraction.Ignore))
+                if (!hit.transform.IsChildOf(transform)) return false;
+            foreach (var collider in Physics.OverlapSphere(to, .8f, mask, QueryTriggerInteraction.Ignore))
+                if (!collider.transform.IsChildOf(transform)) return false;
+            return true;
+        }
+
         private void ReconstructPath(Dictionary<int, int> cameFrom, int current, List<Vector3> path)
         {
             var totalPath = new List<Vector3> { nodes[current].position };

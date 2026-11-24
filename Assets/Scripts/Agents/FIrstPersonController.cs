@@ -21,6 +21,8 @@ public class FirstPersonController : MonoBehaviour
     public float maxLookAngle = 80f;
     public float LookSensitivityMultiplier { get; set; } = 1f;
 
+    private readonly PlayerTreePassage treePassage = new PlayerTreePassage();
+    private float nextTreeScan;
     private CharacterController controller;
     private float verticalRotation;
     private float verticalVelocity;
@@ -30,6 +32,7 @@ public class FirstPersonController : MonoBehaviour
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        treePassage.Refresh(transform);
         introSequence = FindAnyObjectByType<IntroTruckSequence>();
 
         if (playerCamera == null && Camera.main != null)
@@ -41,6 +44,12 @@ public class FirstPersonController : MonoBehaviour
 
     void Update()
     {
+        if (Time.unscaledTime >= nextTreeScan)
+        {
+            nextTreeScan = Time.unscaledTime + 1f;
+            treePassage.Refresh(transform);
+        }
+        treePassage.KeepPairsIgnored();
         HandleMouseLook();
         HandleMovement();
 
@@ -64,6 +73,8 @@ public class FirstPersonController : MonoBehaviour
 
     public void ResetLook()
     {
+        treePassage.Refresh(transform);
+        nextTreeScan = 0;
         verticalRotation = 0;
         verticalVelocity = 0;
         if (playerCamera) playerCamera.localRotation = Quaternion.identity;
@@ -150,6 +161,8 @@ public class FirstPersonController : MonoBehaviour
         controller.Move(velocity * Time.deltaTime);
     }
 
+    private void OnDestroy() => treePassage.Dispose();
+
     private void OnTriggerEnter(Collider other)
     {
         var ladder = other.GetComponentInParent<Operation1989.Interaction.Environment.LadderClimbZone>();
@@ -180,5 +193,60 @@ public class FirstPersonController : MonoBehaviour
         }
 
         return null;
+    }
+}
+
+
+/// <summary>Player-only tree passage. Tree colliders still participate in rays and other actors' collision queries.</summary>
+public sealed class PlayerTreePassage : System.IDisposable
+{
+    readonly System.Collections.Generic.List<(Collider player, Collider tree)> pairs =
+        new System.Collections.Generic.List<(Collider player, Collider tree)>();
+    readonly System.Collections.Generic.HashSet<(Collider, Collider)> owned = new System.Collections.Generic.HashSet<(Collider, Collider)>();
+
+    public static bool IsTreeCollider(Collider collider)
+    {
+        if (!collider || collider is TerrainCollider || collider.isTrigger) return false;
+        for (var current = collider.transform; current; current = current.parent)
+        {
+            string name = current.name;
+            if (current.GetComponent<Tree>() || name.StartsWith("TreeOld_", System.StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("TreeCreator_", System.StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("Tree", System.StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Tree_", System.StringComparison.OrdinalIgnoreCase) ||
+                name.StartsWith("Tree (", System.StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+    public void Refresh(Transform player)
+    {
+        if (!player) return;
+        var bodies = player.GetComponentsInChildren<Collider>(true);
+        foreach (var tree in Object.FindObjectsByType<Collider>(FindObjectsInactive.Include))
+        {
+            if (!IsTreeCollider(tree) || !tree.enabled || !tree.gameObject.activeInHierarchy) continue;
+            foreach (var body in bodies)
+            {
+                if (!body || !body.enabled || !body.gameObject.activeInHierarchy || body.isTrigger || body == tree || tree.transform.IsChildOf(player)) continue;
+                var key = (body, tree);
+                if (!owned.Contains(key) && !Physics.GetIgnoreCollision(body, tree))
+                {
+                    owned.Add(key); pairs.Add((body, tree));
+                }
+            }
+        }
+        KeepPairsIgnored();
+    }
+    public void KeepPairsIgnored()
+    {
+        foreach (var pair in pairs)
+            if (pair.player && pair.tree && pair.player.enabled && pair.tree.enabled &&
+                !Physics.GetIgnoreCollision(pair.player, pair.tree)) Physics.IgnoreCollision(pair.player, pair.tree, true);
+    }
+    public void Dispose()
+    {
+        foreach (var pair in pairs)
+            if (pair.player && pair.tree) Physics.IgnoreCollision(pair.player, pair.tree, false);
+        pairs.Clear(); owned.Clear();
     }
 }

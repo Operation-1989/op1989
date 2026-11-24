@@ -24,7 +24,11 @@ public sealed class CombatHealth : MonoBehaviour
     readonly CombatHud hud = new CombatHud();
     Vector3 spawn;
     Quaternion rotation;
-    void Awake(){Current=maximumHealth;spawn=transform.position;rotation=transform.rotation;}
+    void Awake()
+    {
+        if(!isPlayer && GetComponent<BarricadePatrolSoldier>())maximumHealth=BarricadePatrolSoldier.PatrolMaximumHealth;
+        Current=maximumHealth;spawn=transform.position;rotation=transform.rotation;
+    }
     public void TakeDamage(float amount)
     {
         if(Dead || CinematicProtection || amount<=0)return;

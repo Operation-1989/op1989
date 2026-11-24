@@ -71,6 +71,8 @@ public sealed class RifleWeapon : MonoBehaviour
     }
     void DamageTarget(RaycastHit hit)
     {
+        var jeep=hit.collider.GetComponentInParent<Operation1989.AI.Jeep.JeepDamage>();
+        if(jeep) {if(playerWeapon)jeep.TakeDamage(damage,hit.point);return;}
         var drone=hit.collider.GetComponentInParent<DroneDamage>();
         if(drone) {drone.TakeDamage(damage,hit.point);return;}
         var health=hit.collider.GetComponentInParent<CombatHealth>();

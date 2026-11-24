@@ -54,6 +54,7 @@ public sealed class IntelTheftMission : MonoBehaviour
     GUIStyle title, text, small, marker;
     readonly ObjectiveCompassHud compass = new ObjectiveCompassHud();
     readonly DroneThreatHud droneThreat = new DroneThreatHud();
+    readonly JeepDamageHud jeepDamageHud = new JeepDamageHud();
     readonly TerminalInteractionPopup terminalPopup = new TerminalInteractionPopup();
     public float CompassHeading
     {
@@ -122,12 +123,24 @@ public sealed class IntelTheftMission : MonoBehaviour
         if (State != Phase.ReadyToRemove) return false;
         terminalInputFrame = Time.frameCount;
         State = Phase.Escape;
+        RestorePatrolsAfterTheft();
         if (outro) outro.PrepareExtraction();
         terminal.SetUsbInserted(false);
         terminal.RefreshDisplay();
         if (alarm) alarm.SetActive(true);
         extraction.SetMarked(true);
         return true;
+    }
+    void RestorePatrolsAfterTheft()
+    {
+        // Corpses keep their GameObject active, but their patrol component is
+        // disabled. Include those components and leave other scenes/elite guards alone.
+        foreach (var guard in FindObjectsByType<BarricadePatrolSoldier>())
+        {
+            if (guard.gameObject.scene != gameObject.scene) continue;
+            var patrolHealth = guard.GetComponent<CombatHealth>();
+            if (patrolHealth && !patrolHealth.isPlayer) patrolHealth.Restore();
+        }
     }
     public bool TryExtract()
     {
@@ -210,6 +223,7 @@ public sealed class IntelTheftMission : MonoBehaviour
             compass.Draw(width, CompassHeading, ObjectiveBearing, ObjectiveDistance,
                 State == Phase.Escape ? ObjectiveGlow.Cyan : ObjectiveGlow.Amber, CompassInstruction);
             droneThreat.Draw(playerCamera, width, height);
+            jeepDamageHud.Draw(player, width);
         }
         GUI.matrix = previous;
         GUI.color = previousColor;

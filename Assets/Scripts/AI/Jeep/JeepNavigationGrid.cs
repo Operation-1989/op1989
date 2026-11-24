@@ -46,7 +46,7 @@ namespace Operation1989.AI.Jeep
         [Tooltip("Obstacle scan starts this far above the ground, so curbs and road seams are ignored.")]
         [Min(.05f)] public float obstacleBottom = .4f;
         [Min(.5f)] public float obstacleTop = 2.6f;
-        [Tooltip("Half of the jeep's width. Set from the jeep's BoxCollider at runtime.")]
+        [Tooltip("Turning footprint radius. Set from the jeep BoxCollider, or the soldier capsule.")]
         [Min(.1f)] public float vehicleHalfWidth = 1f;
         [Tooltip("Extra free space kept between the jeep's side and any obstacle.")]
         [Min(0)] public float safetyMargin = .5f;
@@ -93,12 +93,16 @@ namespace Operation1989.AI.Jeep
 
         Vector3 origin;
         float referenceY;
-        Transform ignoreRoot;
+        Transform ignoreRoot, movingIntroTruck;
         HashSet<Collider> roadSet = new HashSet<Collider>();
         float nextTemporaryExpiry = float.PositiveInfinity;
 
+        bool shortestCosts;
+        readonly Dictionary<Collider, bool> ignoredCache = new Dictionary<Collider, bool>();
+        float SearchCost(int i) => shortestCosts ? 1f : cellCost[i];
+
         int CellCount => Width * Depth;
-        float MinCellCost => Mathf.Min(roadCost, offRoadCost);
+        float MinCellCost => shortestCosts ? 1f : Mathf.Min(roadCost, offRoadCost);
         float HardClearance => vehicleHalfWidth + safetyMargin;
 
         // =====================================================================================
@@ -112,7 +116,11 @@ namespace Operation1989.AI.Jeep
         {
             var timer = Stopwatch.StartNew();
             Physics.SyncTransforms();
+            IsBuilt = false;
+            ignoredCache.Clear();
             ignoreRoot = owner;
+            var intro = FindAnyObjectByType<IntroTruckSequence>();
+            movingIntroTruck = intro ? intro.truck : null;
             referenceY = referenceHeight;
             roadSet = new HashSet<Collider>();
             if (roadSurfaces != null)
@@ -172,15 +180,23 @@ namespace Operation1989.AI.Jeep
             // low crates create a step that the neighbour test rejects.
             int count = Physics.RaycastNonAlloc(new Vector3(c.x, referenceY + 60f, c.z), Vector3.down, hits, 120f,
                 ~0, QueryTriggerInteraction.Ignore);
-            float best = float.NaN; bool bestRoad = false;
+            if (count == hits.Length)
+            {
+                hits = Physics.RaycastAll(new Vector3(c.x, referenceY + 60f, c.z), Vector3.down, 120f, ~0, QueryTriggerInteraction.Ignore);
+                count = hits.Length;
+            }
+            float best = float.NaN; bool bestRoad = false, bestKnownGround = false;
             for (int h = 0; h < count; h++)
             {
                 var hit = hits[h];
                 if (IgnoredCollider(hit.collider) || hit.normal.y < minGroundNormalY) continue;
                 if (Mathf.Abs(hit.point.y - referenceY) > maxHeightFromReference) continue;
-                if (float.IsNaN(best) || hit.point.y > best)
+                bool knownGround = roadSet.Contains(hit.collider) || hit.collider is TerrainCollider;
+                bool better = float.IsNaN(best) || (knownGround && !bestKnownGround) ||
+                    (knownGround == bestKnownGround && (knownGround ? hit.point.y > best : Mathf.Abs(hit.point.y - referenceY) < Mathf.Abs(best - referenceY)));
+                if (better)
                 {
-                    best = hit.point.y;
+                    best = hit.point.y; bestKnownGround = knownGround;
                     bestRoad = roadSet.Contains(hit.collider);
                 }
             }
@@ -193,11 +209,17 @@ namespace Operation1989.AI.Jeep
             var center = new Vector3(c.x, best + obstacleBottom + half, c.z);
             int o = Physics.OverlapBoxNonAlloc(center, new Vector3(cellSize * .5f, half, cellSize * .5f), overlaps,
                 Quaternion.identity, obstacleLayers, QueryTriggerInteraction.Ignore);
+            if (o == overlaps.Length)
+            {
+                overlaps = Physics.OverlapBox(center, new Vector3(cellSize * .5f, half, cellSize * .5f), Quaternion.identity, obstacleLayers, QueryTriggerInteraction.Ignore);
+                o = overlaps.Length;
+            }
             bool solid = false;
             for (int k = 0; k < o && !solid; k++)
             {
                 var col = overlaps[k];
-                if (IgnoredCollider(col) || roadSet.Contains(col) || col is TerrainCollider) continue;
+                if (IgnoredCollider(col) || col is TerrainCollider) continue;
+                if (roadSet.Contains(col) && col.bounds.max.y <= best + obstacleBottom) continue;
                 solid = true;
             }
             staticSolid[i] = solid;
@@ -210,10 +232,13 @@ namespace Operation1989.AI.Jeep
         bool IgnoredCollider(Collider c)
         {
             if (!c || c.isTrigger) return true;
-            if (ignoreRoot && c.transform.IsChildOf(ignoreRoot)) return true;
-            if (c.attachedRigidbody) return true;
-            if (c is CharacterController) return true;
-            return false;
+            if (ignoredCache.TryGetValue(c, out bool ignored)) return ignored;
+            ignored = (ignoreRoot && c.transform.IsChildOf(ignoreRoot)) ||
+                (movingIntroTruck && c.transform.IsChildOf(movingIntroTruck)) || c is CharacterController ||
+                c.GetComponentInParent<CombatHealth>() || c.GetComponentInParent<DroneDamage>() ||
+                c.GetComponentInParent<BaseRoadJeepPatrol>() || (c.attachedRigidbody && !c.attachedRigidbody.isKinematic);
+            ignoredCache[c] = ignored;
+            return ignored;
         }
 
         // =====================================================================================
@@ -263,7 +288,7 @@ namespace Operation1989.AI.Jeep
             {
                 // Cell centre distance minus half a cell = conservative distance to the obstacle edge.
                 float free = clearance[i] - cellSize * .5f;
-                blocked[i] = free < hard;
+                blocked[i] = !HasBodyClearance(i % Width, i / Width, hard, now);
                 if (blocked[i]) { blockedCount++; cellCost[i] = float.PositiveInfinity; continue; }
 
                 float cost = road[i] ? roadCost : offRoadCost;
@@ -272,6 +297,21 @@ namespace Operation1989.AI.Jeep
                 cellCost[i] = cost;
             }
             BlockedCellCount = blockedCount;
+        }
+
+        bool HasBodyClearance(int x, int z, float radius, float now)
+        {
+            float distance = radius + cellSize * .707107f;
+            int cells = Mathf.CeilToInt(distance / cellSize);
+            for (int dz = -cells; dz <= cells; dz++)
+                for (int dx = -cells; dx <= cells; dx++)
+                {
+                    if ((dx * dx + dz * dz) * cellSize * cellSize > distance * distance) continue;
+                    if (!InGrid(x + dx, z + dz)) return false;
+                    int i = Index(x + dx, z + dz);
+                    if (staticSolid[i] || tempUntil[i] > now) return false;
+                }
+            return true;
         }
 
         float Dist(int x, int z) => InGrid(x, z) ? clearance[Index(x, z)] : 0f;
@@ -302,8 +342,9 @@ namespace Operation1989.AI.Jeep
         /// Finds the cheapest collision-free route from start to the drivable cell nearest the goal.
         /// The result is a smoothed list of world positions (on the ground), starting at the jeep.
         /// </summary>
-        public bool FindPath(Vector3 start, Vector3 goal, List<Vector3> result, float goalSearchRadius = 30f)
+        public bool FindPath(Vector3 start, Vector3 goal, List<Vector3> result, float goalSearchRadius = 30f, bool shortestRoute = false)
         {
+            shortestCosts = shortestRoute;
             result.Clear();
             LastRawPath.Clear(); LastPath.Clear();
             LastExpandedNodes = 0; LastPathCost = 0;
@@ -312,7 +353,7 @@ namespace Operation1989.AI.Jeep
             RefreshExpiredObstacles();
 
             // The jeep may stand inside the safety margin (e.g. stopped at a wall): use the nearest free cell.
-            int startCell = NearestTraversable(start, 6f);
+            int startCell = NearestTraversable(start, 6f, true);
             // The player may be inside a building: drive to the nearest reachable spot outside.
             int goalCell = NearestTraversable(goal, goalSearchRadius);
             if (startCell < 0 || goalCell < 0)
@@ -348,7 +389,7 @@ namespace Operation1989.AI.Jeep
                     if (diagonal && (!CanStep(current, Index(nx, cz)) || !CanStep(current, Index(cx, nz)))) continue;
 
                     float stepLength = diagonal ? cellSize * Sqrt2 : cellSize;
-                    float tentative = g[current] + stepLength * (cellCost[current] + cellCost[next]) * .5f;
+                    float tentative = g[current] + stepLength * (SearchCost(current) + SearchCost(next)) * .5f;
                     if (openStamp[next] != stamp || tentative < g[next])
                     {
                         openStamp[next] = stamp;
@@ -362,8 +403,19 @@ namespace Operation1989.AI.Jeep
             LastExpandedNodes = expanded;
             if (!found)
             {
-                LastSearchMilliseconds = timer.Elapsed.TotalMilliseconds;
-                return false;
+                // A nearest free cell may be behind an inaccessible wall. Choose a reachable
+                // approach cell instead, without pretending the authored goal was reached.
+                float best = goalSearchRadius * goalSearchRadius;
+                int reachable = -1;
+                for (int i = 0; i < CellCount; i++)
+                {
+                    if (closedStamp[i] != stamp) continue;
+                    var point = CellCenterOnGround(i);
+                    float distance = new Vector2(point.x - goal.x, point.z - goal.z).sqrMagnitude;
+                    if (distance < best) { best = distance; reachable = i; }
+                }
+                if (reachable < 0) { LastSearchMilliseconds = timer.Elapsed.TotalMilliseconds; return false; }
+                goalCell = reachable;
             }
 
             var cells = new List<int>();
@@ -376,7 +428,9 @@ namespace Operation1989.AI.Jeep
             if (result.Count > 0)
             {
                 // Begin at the jeep itself so the first segment is driven from where it stands.
-                result[0] = new Vector3(start.x, result[0].y, start.z);
+                // Preserve the safe recovery cell when leaving an inflated safety margin.
+                if (Vector3.Distance(start, result[0]) > .1f) result.Insert(0, start);
+                else result[0] = start;
             }
             LastPath.AddRange(result);
             LastSearchMilliseconds = timer.Elapsed.TotalMilliseconds;
@@ -400,31 +454,34 @@ namespace Operation1989.AI.Jeep
         }
 
         /// <summary>Breadth-first ring search for the closest free cell (handles goals inside buildings).</summary>
-        int NearestTraversable(Vector3 world, float radius)
+        int NearestTraversable(Vector3 world, float radius, bool requireConnection = false)
         {
             WorldToCell(world, out int x, out int z);
-            x = Mathf.Clamp(x, 0, Width - 1); z = Mathf.Clamp(z, 0, Depth - 1);
-            if (!blocked[Index(x, z)]) return Index(x, z);
-            int maxRing = Mathf.CeilToInt(radius / cellSize);
-            Vector2 p = new Vector2(world.x, world.z);
-            for (int r = 1; r <= maxRing; r++)
+            int ring = Mathf.CeilToInt(radius / cellSize) + 1;
+            int best = -1; float bestDistance = radius * radius;
+            for (int cz = Mathf.Max(0, z - ring); cz <= Mathf.Min(Depth - 1, z + ring); cz++)
+                for (int cx = Mathf.Max(0, x - ring); cx <= Mathf.Min(Width - 1, x + ring); cx++)
+                {
+                    int i = Index(cx, cz); if (blocked[i]) continue;
+                    Vector3 point = CellCenterOnGround(i);
+                    float d = new Vector2(point.x - world.x, point.z - world.z).sqrMagnitude;
+                    if (d > bestDistance || (requireConnection && !RawConnectionClear(world, point))) continue;
+                    bestDistance = d; best = i;
+                }
+            return best;
+        }
+
+        bool RawConnectionClear(Vector3 from, Vector3 to)
+        {
+            int samples = Mathf.Max(1, Mathf.CeilToInt(Vector3.Distance(from, to) / (cellSize * .25f)));
+            float now = Application.isPlaying ? Time.time : 0;
+            for (int i = 0; i <= samples; i++)
             {
-                int best = -1; float bestD = float.PositiveInfinity;
-                for (int dz = -r; dz <= r; dz++)
-                    for (int dx = -r; dx <= r; dx++)
-                    {
-                        if (Mathf.Abs(dx) != r && Mathf.Abs(dz) != r) continue; // ring only
-                        int cx = x + dx, cz = z + dz;
-                        if (!InGrid(cx, cz)) continue;
-                        int i = Index(cx, cz);
-                        if (blocked[i]) continue;
-                        Vector3 c = CellCenterFlat(cx, cz);
-                        float d = (new Vector2(c.x, c.z) - p).sqrMagnitude;
-                        if (d < bestD) { bestD = d; best = i; }
-                    }
-                if (best >= 0) return best;
+                if (!WorldToCell(Vector3.Lerp(from, to, i / (float)samples), out int x, out int z)) return false;
+                int c = Index(x, z);
+                if (staticSolid[c] || tempUntil[c] > now) return false;
             }
-            return -1;
+            return true;
         }
 
         // =====================================================================================
@@ -441,7 +498,7 @@ namespace Operation1989.AI.Jeep
             {
                 int a = cells[i - 1], b = cells[i];
                 bool diagonal = a % Width != b % Width && a / Width != b / Width;
-                prefix[i] = prefix[i - 1] + (diagonal ? cellSize * Sqrt2 : cellSize) * (cellCost[a] + cellCost[b]) * .5f;
+                prefix[i] = prefix[i - 1] + (diagonal ? cellSize * Sqrt2 : cellSize) * (SearchCost(a) + SearchCost(b)) * .5f;
             }
 
             output.Add(CellCenterOnGround(cells[0]));
@@ -473,8 +530,13 @@ namespace Operation1989.AI.Jeep
                 Vector3 p = Vector3.Lerp(pa, pb, s / (float)samples);
                 if (!WorldToCell(p, out int x, out int z)) return float.PositiveInfinity;
                 int c = Index(x, z);
-                if (c != previous && !CanStep(previous, c)) return float.PositiveInfinity;
-                total += step * (cellCost[previous] + cellCost[c]) * .5f;
+                if (c != previous)
+                {
+                    if (!CanStep(previous, c)) return float.PositiveInfinity;
+                    int px = previous % Width, pz = previous / Width;
+                    if (px != x && pz != z && (!CanStep(previous, Index(px, z)) || !CanStep(previous, Index(x, pz)))) return float.PositiveInfinity;
+                }
+                total += step * (SearchCost(previous) + SearchCost(c)) * .5f;
                 previous = c;
             }
             return total;

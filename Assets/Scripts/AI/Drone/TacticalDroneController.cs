@@ -10,7 +10,7 @@ namespace Operation1989.AI.Drone
     /// Orchestrates the Sense-Think-Act autonomous cycle:
     /// 1. SENSE: Multi-modal perception (optical vision, acoustic hearing, obstacle occlusion)
     /// 2. THINK: Forward Chaining inference engine over KnowledgeBase facts
-    /// 3. ACT: 3D A* Search Pathfinding with dynamic edge re-planning and combat engagement
+    /// 3. ACT: 3D A* Search Pathfinding with dynamic edge re-planning and player tracking and jeep dispatch
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(TacticalDronePerception))]
@@ -23,6 +23,11 @@ namespace Operation1989.AI.Drone
         [Header("Patrol Loop")]
         [SerializeField] private int[] patrolNodeSequence;
         [SerializeField] private float searchDurationAtLkp = 5.0f;
+
+        [Header("Shootable tracking position")]
+        [Min(4)] public float trackingDistance = 12f;
+        [Min(2)] public float trackingHeight = 6f;
+        [Min(3)] public float patrolHeight = 8f;
 
         public InferredAction CurrentAction => inferenceEngine ? inferenceEngine.CurrentAction : InferredAction.PatrolWaypoints;
         public int CurrentPatrolIndex { get; private set; }
@@ -52,6 +57,14 @@ namespace Operation1989.AI.Drone
         private void OnEnable()
         {
             movement.OnDynamicObstacleDetected += HandleDynamicObstacleDetected;
+            // Script reloads can retain the previous high flight nodes and active route.
+            if (Application.isPlaying)
+            {
+                navGraph.ConfigureCruiseHeight(patrolHeight, 0f);
+                movement.ClearPath();
+                nextTrackingPlan = 0;
+                trackingHeading = Vector3.zero;
+            }
         }
 
         private void OnDisable()
@@ -69,6 +82,7 @@ namespace Operation1989.AI.Drone
                 for (int i = 0; i < count; i++) patrolNodeSequence[i] = i;
             }
 
+            navGraph.ConfigureCruiseHeight(patrolHeight, 0f);
             CurrentPatrolIndex = (patrolNodeSequence.Length > 1) ? 1 : 0;
             PlanPathToNextPatrolNode();
         }
@@ -87,8 +101,9 @@ namespace Operation1989.AI.Drone
 
             switch (action)
             {
+                case InferredAction.DispatchJeepPursuit:
                 case InferredAction.EngageRangedCombat:
-                    ExecuteEngageAction();
+                    ExecuteTrackAction();
                     break;
 
                 case InferredAction.InvestigateLastKnownPos:
@@ -102,33 +117,50 @@ namespace Operation1989.AI.Drone
             }
         }
 
-        private void ExecuteEngageAction()
+        float nextTrackingPlan;
+        Vector3 lastTrackingGoal;
+        Vector3 trackingHeading, headingAnchor;
+
+        private void ExecuteTrackAction()
         {
-            if (!perception.TargetPlayer) return;
-
-            Vector3 playerPos = perception.TargetPlayer.position;
-
-            // Aim rotation towards player
-            Vector3 aimDir = (playerPos - transform.position).normalized;
-            aimDir.y = 0;
-            if (aimDir.sqrMagnitude > 0.001f)
+            if (!perception.CanSeePlayer || !perception.TargetPlayer) return;
+            // Reporting is handled by DronePlayerSurveillance after sensing, independently of flight.
+            searchTimer = 0;
+            Vector3 target = perception.LastKnownPosition;
+            if (Time.time < nextTrackingPlan) return;
+            nextTrackingPlan = Time.time + .75f;
+            Vector3 moved = target - headingAnchor; moved.y = 0;
+            // Camera-only aiming must not drag the target around the player.
+            if (trackingHeading.sqrMagnitude < .01f || moved.magnitude > 1f)
             {
-                transform.rotation = Quaternion.RotateTowards(transform.rotation, Quaternion.LookRotation(aimDir), 120f * Time.deltaTime);
+                trackingHeading = perception.TargetPlayer.forward; trackingHeading.y = 0;
+                if (trackingHeading.sqrMagnitude < .01f) trackingHeading = Vector3.forward;
+                trackingHeading.Normalize(); headingAnchor = target;
             }
-
-            combat.FireSuppressiveBurst(perception.TargetPlayer);
-
-            // Dynamic tactical flight during combat:
-            // If the player is far (> 35m) and drone is not moving, navigate to nearest vantage node
-            float distToPlayer = Vector3.Distance(transform.position, playerPos);
-            if (distToPlayer > 35f && !movement.IsMoving)
-            {
-                int vantage = navGraph.GetNearestNode(playerPos);
-                if (vantage >= 0 && vantage != currentGoalNode)
+            float ground = navGraph.GroundHeightAt(target, target.y);
+            Vector3 desired = TrackingPoint(target, trackingHeading, ground, trackingDistance, trackingHeight);
+            if (movement.IsMoving && Vector3.Distance(desired, lastTrackingGoal) < 2f) return;
+            lastTrackingGoal = desired;
+            // If the preferred spot is occupied, choose another forward spot at the same low height.
+            foreach (float distance in new[] { trackingDistance, trackingDistance + 4f })
+                foreach (float angle in new[] { 0f, -35f, 35f, -65f, 65f })
                 {
-                    PlanPathToNode(vantage);
+                    Vector3 heading = Quaternion.Euler(0, angle, 0) * trackingHeading;
+                    Vector3 candidate = TrackingPoint(target, heading, ground, distance, trackingHeight);
+                    candidate.y = navGraph.GroundHeightAt(candidate, ground) + trackingHeight;
+                    if (!navGraph.FindFlightPath(transform.position, candidate, out var path)) continue;
+                    movement.SetPath(path); return;
                 }
-            }
+            // Keep the existing safe route; never retreat to the old 18 m overhead position.
+        }
+
+        public static Vector3 TrackingPoint(Vector3 playerPosition, Vector3 heading, float groundY, float ahead, float height)
+        {
+            heading.y = 0;
+            if (heading.sqrMagnitude < .01f) heading = Vector3.forward;
+            Vector3 point = playerPosition + heading.normalized * Mathf.Max(4, ahead);
+            point.y = groundY + Mathf.Max(2, height);
+            return point;
         }
 
         private void ExecuteInvestigateAction()
@@ -165,6 +197,7 @@ namespace Operation1989.AI.Drone
                 if (patrolRetryTimer >= 0.5f)
                 {
                     patrolRetryTimer = 0f;
+                    if (patrolNodeSequence == null || patrolNodeSequence.Length == 0) return;
                     CurrentPatrolIndex = (CurrentPatrolIndex + 1) % patrolNodeSequence.Length;
                     PlanPathToNextPatrolNode();
                 }
@@ -179,14 +212,13 @@ namespace Operation1989.AI.Drone
         {
             if (goalIndex < 0 || goalIndex >= navGraph.Nodes.Count) return;
 
-            int startNode = navGraph.GetNearestNode(transform.position);
             currentGoalNode = goalIndex;
 
-            if (navGraph.FindPathAStar(startNode, goalIndex, out List<Vector3> path, out int nodesExplored))
+            if (navGraph.FindFlightPath(transform.position, navGraph.Nodes[goalIndex].position, out List<Vector3> path))
             {
                 movement.SetPath(path);
                 activeDestination = navGraph.Nodes[goalIndex].position;
-                Debug.Log($"[Tactical Drone Controller] A* Path calculated to Node {goalIndex} ({navGraph.Nodes[goalIndex].label}) | Explored Nodes: {nodesExplored}");
+                Debug.Log($"[Tactical Drone Controller] A* Path calculated to Node {goalIndex} ({navGraph.Nodes[goalIndex].label})");
             }
         }
 
@@ -203,13 +235,9 @@ namespace Operation1989.AI.Drone
         /// </summary>
         private void HandleDynamicObstacleDetected()
         {
-            int currentNode = navGraph.GetNearestNode(transform.position);
-            if (currentGoalNode >= 0 && currentNode != currentGoalNode)
-            {
-                navGraph.SetEdgeBlocked(currentNode, currentGoalNode, true);
-                // Trigger dynamic A* re-plan
-                PlanPathToNode(currentGoalNode);
-            }
+            movement.ClearPath();
+            nextTrackingPlan = 0;
+            if (!perception.CanSeePlayer && currentGoalNode >= 0) PlanPathToNode(currentGoalNode);
         }
 
     }

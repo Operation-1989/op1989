@@ -32,6 +32,13 @@ public sealed class IntroTruckSequence : MonoBehaviour
     [TextArea] public string entryBriefing = "First, get inside. Secretly follow the supply truck through the gate. Stay out of sight and use its arrival as your opening.";
     public IntroTruckAudio truckAudio;
     public IntelTheftMission intelMission;
+    [Header("Agent briefing before truck arrival")]
+    public bool showAgentBriefing = true;
+    [Tooltip("Uses the helicopter outro music when this is left empty.")]
+    public AudioClip briefingMusic;
+    [Range(0, 1)] public float briefingMusicVolume = .35f;
+    [Min(2)] public float briefingOpeningSeconds = 4;
+    [Min(8)] public float briefingShotSeconds = 8;
     [Header("Gate timing")]
     [Min(0)] public float gateOpenDelay = 1;
     [Tooltip("Maximum entry window after the camera handoff. Normally the truck's first inside right turn closes the gate sooner.")]
@@ -67,9 +74,12 @@ public sealed class IntroTruckSequence : MonoBehaviour
     Vector3 playerStart;
     Quaternion playerRotation;
     bool initialized;
+    bool briefingPending;
     Quaternion cameraStartRotation;
     readonly IntroMissionHud missionHud = new IntroMissionHud();
-    public bool MissionCapturesPointer => missionHud.CapturesPointer;
+    readonly AgentBriefingCinematic agentBriefing = new AgentBriefingCinematic();
+    public bool BriefingActive => briefingPending || agentBriefing.Active;
+    public bool MissionCapturesPointer => BriefingActive || missionHud.CapturesPointer;
     public bool MissionVisible => missionHud.Visible;
     public bool MissionExpanded => missionHud.Expanded;
     public bool Entered => entered;
@@ -94,7 +104,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void Awake()
     {
-        if (Initialize()) BeginSequence();
+        if (Initialize()) { briefingPending = showAgentBriefing; BeginSequence(); }
     }
 
     bool Initialize()
@@ -115,7 +125,23 @@ public sealed class IntroTruckSequence : MonoBehaviour
         for (int i = 0; i < playerInput.Length; i++)
             inputStates[i] = playerInput[i] && playerInput[i].enabled;
         initialized = true;
+        EnsureTruckSolid();
         return true;
+    }
+
+    void EnsureTruckSolid()
+    {
+        var solid = truck.GetComponent<BoxCollider>();
+        if (!solid)
+        {
+            solid = truck.gameObject.AddComponent<BoxCollider>();
+            solid.center = collisionCenter; solid.size = collisionHalfExtents * 2;
+        }
+        solid.enabled = true; solid.isTrigger = false;
+        var body = truck.GetComponent<Rigidbody>();
+        if (body) { body.detectCollisions = true; body.isKinematic = true; }
+        var character = player.GetComponent<CharacterController>();
+        if (character) Physics.IgnoreCollision(character, solid, false);
     }
 
     // Also runs when the editor has both domain reload and scene reload disabled.
@@ -127,12 +153,15 @@ public sealed class IntroTruckSequence : MonoBehaviour
             {
                 sequence.ResetPlayer();
                 sequence.gate.ResetGate();
+                sequence.agentBriefing.Stop();
+                sequence.briefingPending = sequence.showAgentBriefing;
                 sequence.BeginSequence();
             }
     }
 
     void BeginSequence()
     {
+        EnsureTruckSolid();
         player.GetComponent<PlayerCheckpointState>()?.Clear();
         elapsed = 0;
         currentSpeed = 0;
@@ -142,7 +171,11 @@ public sealed class IntroTruckSequence : MonoBehaviour
         BlockedBy = "";
         windowEnd = float.PositiveInfinity;
         missionHud.Reset(player.position);
-        if (truckAudio) truckAudio.ResetSounds();
+        if (truckAudio)
+        {
+            if (briefingPending) truckAudio.StopSounds();
+            else truckAudio.ResetSounds();
+        }
         truck.SetPositionAndRotation(route[0].position,
             Quaternion.LookRotation((route[1].position - route[0].position).normalized, Vector3.up));
         SetInput(false);
@@ -174,6 +207,18 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void Update()
     {
+        bool skipPressed = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
+        if (briefingPending)
+        {
+            briefingPending = false;
+            if (!agentBriefing.Begin(this)) { BeginSequence(); return; }
+        }
+        if (agentBriefing.Active)
+        {
+            if (agentBriefing.Tick(Time.unscaledDeltaTime, skipPressed, briefingMusicVolume)) BeginSequence();
+            // This Space press must not also skip the truck intro.
+            return;
+        }
         if (!intelMission || (intelMission.State != IntelTheftMission.Phase.Extracting && intelMission.State != IntelTheftMission.Phase.Complete))
             missionHud.Tick(this);
         elapsed += Time.deltaTime;
@@ -222,7 +267,11 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     public void SkipIntro()
     {
-        if (handedOff || !Initialize()) return;
+        if (!Initialize()) return;
+        // Preserve the existing full-skip API for checkpoints/tools. Keyboard
+        // skipping during the briefing only advances into the truck cinematic.
+        if (BriefingActive) { agentBriefing.Stop(); briefingPending = false; BeginSequence(); }
+        if (handedOff) return;
         elapsed = Mathf.Max(elapsed, cutsceneDuration);
         Handoff();
     }
@@ -244,6 +293,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void RespawnAt(Vector3 position, Quaternion rotation)
     {
+        agentBriefing.Stop(); briefingPending = false;
         if (intelMission) intelMission.ResetForCheckpoint();
         SetInput(false);
         var controller = player.GetComponent<CharacterController>();
@@ -264,6 +314,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void LateUpdate()
     {
+        if (BriefingActive) { agentBriefing.ApplyCamera(); return; }
         if (!handedOff) UpdateShot();
     }
 
@@ -362,6 +413,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     public void Retry()
     {
+        agentBriefing.Stop(); briefingPending = false;
         // Reset only intro-owned state; agents and all other gameplay state remain untouched.
         SetInput(false);
         ResetPlayer();
@@ -381,6 +433,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void OnDisable()
     {
+        agentBriefing.Stop(); briefingPending = false;
         missionHud.ReleaseCursor();
         if (inputStates == null) return;
         SetInput(true);
@@ -390,10 +443,13 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void OnGUI()
     {
+        if (BriefingActive) { agentBriefing.Draw(); return; }
         if (intelMission && (intelMission.State == IntelTheftMission.Phase.Extracting || intelMission.State == IntelTheftMission.Phase.Complete)) return;
         var health = player ? player.GetComponent<CombatHealth>() : null;
         if (!health || !health.Dead) missionHud.Draw(this);
     }
+
+    void OnDestroy() => agentBriefing.Dispose();
 
     void OnDrawGizmosSelected()
     {

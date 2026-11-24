@@ -56,7 +56,7 @@ public static class PatrolCombatSetup
             animator.applyRootMotion=false;animator.cullingMode=AnimatorCullingMode.AlwaysAnimate;
             AssetDatabase.LoadAllAssetsAtPath("Assets/LowPolySoldiers_demo/animation/demo_combat_idle.FBX").OfType<AnimationClip>().First(c=>!c.name.StartsWith("__")).SampleAnimation(visual,0);
             var cc=root.AddComponent<CharacterController>();cc.height=1.9f;cc.radius=.32f;cc.center=Vector3.up*.95f;cc.stepOffset=.3f;
-            var health=root.AddComponent<CombatHealth>();health.maximumHealth=100;
+            var health=root.AddComponent<CombatHealth>();health.maximumHealth=BarricadePatrolSoldier.PatrolMaximumHealth;
             var rifle=root.AddComponent<RifleWeapon>();rifle.shotSound=sound;rifle.damage=8;rifle.range=45;rifle.muzzle=MakeMuzzle(visual.transform);
             var guard=root.AddComponent<BarricadePatrolSoldier>();guard.player=p.transform;guard.animator=animator;
             var route=new GameObject("Barricade Patrol Route");Undo.RegisterCreatedObjectUndo(route,"Patrol waypoints");

@@ -49,6 +49,7 @@ namespace Operation1989.Interaction.Environment
                          Quaternion.identity, ~0, QueryTriggerInteraction.Collide))
             {
                 // Preserve horizontal road/floor support while bypassing vertical blockers.
+                if (PlayerTreePassage.IsTreeCollider(collider)) continue;
                 if (collider != player && collider.bounds.size.y > 1f &&
                     collider.GetComponentInParent<DoorController>() == null &&
                     !IsProtectedObstacle(collider.transform))
@@ -58,6 +59,8 @@ namespace Operation1989.Interaction.Environment
 
         private static bool IsProtectedObstacle(Transform transform)
         {
+            if (transform.GetComponentInParent<IntroTruckAudio>() != null ||
+                transform.GetComponentInParent<BaseRoadJeepPatrol>() != null) return true;
             for (Transform current = transform; current != null; current = current.parent)
             {
                 if (current.name.StartsWith("Concrete_Barrier",

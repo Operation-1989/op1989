@@ -69889,7 +69889,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6999f523c557f944891d790a45978230, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CombatHealth
-  maximumHealth: 100
+  maximumHealth: 200
   isPlayer: 0
   respawnDelay: 2
   regeneratePlayerHealth: 1
@@ -75694,7 +75694,7 @@ MonoBehaviour:
   startupClip: {fileID: 8300000, guid: 3cbf41c5fc355a549a45333152f9289b, type: 3}
   chatterClip: {fileID: 8300000, guid: daaea39dc6ac6834c937033d369fd889, type: 3}
   outroMusic: {fileID: 8300000, guid: 4df4389cd41787d46b160e69e96860f1, type: 3}
-  outroMusicVolume: 0.28
+  outroMusicVolume: 0.35
   approachEngineVolume: 0.45
   cabinEngineVolume: 0.2
   chatterVolume: 0.75

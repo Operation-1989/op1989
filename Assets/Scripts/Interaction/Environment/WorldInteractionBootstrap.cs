@@ -509,6 +509,10 @@ namespace Operation1989.Interaction.Environment
 
         private static void DisablePassageCollider(Transform transform)
         {
+            // "Intro Entrance Truck" is a vehicle, not an opening in a building.
+            if (transform.GetComponentInParent<IntroTruckAudio>() != null ||
+                transform.GetComponentInParent<BaseRoadJeepPatrol>() != null)
+                return;
             var name = transform.name;
             if (name.IndexOf("door", System.StringComparison.OrdinalIgnoreCase) < 0 &&
                 name.IndexOf("entrance", System.StringComparison.OrdinalIgnoreCase) < 0 &&

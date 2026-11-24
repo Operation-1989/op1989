@@ -88,7 +88,7 @@ public static class HelicopterOutroSetup
         outro.chatterClip = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Ambiance/HelicopterChatter.mp3");
         outro.outroMusic = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/SFX/Ambiance/OutroMusic.mp3");
         if (!outro.outroMusic) throw new InvalidOperationException("OutroMusic.mp3 is missing or has not imported.");
-        outro.outroMusicVolume = .28f; outro.musicFadeInSeconds = 1.75f;
+        outro.outroMusicVolume = .5f; outro.musicFadeInSeconds = 1.75f;
         outro.approachEngineVolume = .45f; outro.cabinEngineVolume = .2f; outro.chatterVolume = .75f;
         outro.engineHandoffSeconds = 1.2f; outro.engineFadeOutSeconds = 6; outro.visualFadeSeconds = 3.5f;
         outro.musicBlackHoldSeconds = 1; outro.musicFadeOutSeconds = 3;

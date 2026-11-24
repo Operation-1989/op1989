@@ -91,7 +91,7 @@ public sealed class MissionAmbientAudio : MonoBehaviour
         if (!player) return;
         float dt = Time.deltaTime;
         bool missionActive = (!intro || intro.HandedOff) && (!health || !health.Dead);
-        bool flybysAllowed = !health || !health.Dead;
+        bool flybysAllowed = (!intro || !intro.BriefingActive) && (!health || !health.Dead);
         bool inside = InsideControlRoom(player.position);
         indoorBlend = Mathf.MoveTowards(indoorBlend, missionActive && inside ? 1 : 0, dt / 1.5f);
         UpdateChatter();
