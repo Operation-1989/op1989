@@ -54,7 +54,6 @@ public sealed class IntelTheftMission : MonoBehaviour
     GUIStyle title, text, small, marker;
     readonly ObjectiveCompassHud compass = new ObjectiveCompassHud();
     readonly DroneThreatHud droneThreat = new DroneThreatHud();
-    readonly JeepDamageHud jeepDamageHud = new JeepDamageHud();
     readonly TerminalInteractionPopup terminalPopup = new TerminalInteractionPopup();
     public float CompassHeading
     {
@@ -223,7 +222,6 @@ public sealed class IntelTheftMission : MonoBehaviour
             compass.Draw(width, CompassHeading, ObjectiveBearing, ObjectiveDistance,
                 State == Phase.Escape ? ObjectiveGlow.Cyan : ObjectiveGlow.Amber, CompassInstruction);
             droneThreat.Draw(playerCamera, width, height);
-            jeepDamageHud.Draw(player, width);
         }
         GUI.matrix = previous;
         GUI.color = previousColor;

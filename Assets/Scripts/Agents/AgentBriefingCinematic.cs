@@ -21,7 +21,8 @@ public sealed class AgentBriefingCinematic : IDisposable
     float elapsed, shotSeconds, openingSeconds, previousNear, previousFov;
     int framedShot = -1;
     float framingAngle;
-    Vector3 observerAnchor, observerSlide;
+    Vector3 observerAnchor, observerAimOffset, observerFocus, observerFocusVelocity;
+    float observerRadius, observerUpdatedAt, observerFovVelocity;
     GUIStyle eyebrow, title, caption, skip, openingTitle, presents, openingTagline;
     public bool Active { get; private set; }
     public int ShotCount => shots.Count;
@@ -134,15 +135,15 @@ public sealed class AgentBriefingCinematic : IDisposable
         if (!Active || !view || ShotIndex < 0) return;
         var shot = shots[ShotIndex];
         if (!shot.subject) return;
-        Bounds bounds = SubjectBounds(shot.subject);
-        Vector3 focus = bounds.center;
         float t = Mathf.Clamp01((elapsed - openingSeconds - ShotIndex * shotSeconds) / shotSeconds);
         bool newShot = framedShot != ShotIndex;
         if (shot.fixedObserver && !newShot)
         {
-            ApplyObserverCamera(shot, bounds, t, false);
+            ApplyObserverCamera(shot, false);
             return;
         }
+        Bounds bounds = SubjectBounds(shot.subject);
+        Vector3 focus = bounds.center;
         Vector3 direction = Quaternion.Euler(0, Mathf.Lerp(-5, 5, Mathf.SmoothStep(0, 1, t)), 0) * shot.direction;
         float radius = Mathf.Max(bounds.extents.y, bounds.extents.x, bounds.extents.z);
         float distance = Mathf.Clamp(radius * 3.5f, shot.minimumDistance, shot.maximumDistance) * Mathf.Lerp(1.06f, 1, t);
@@ -168,9 +169,12 @@ public sealed class AgentBriefingCinematic : IDisposable
             // Capture a world-space camera position once. Subject motion must not
             // translate the camera for the rest of this shot.
             observerAnchor = selected;
-            observerSlide = Vector3.Cross(Vector3.up, focus - selected).normalized;
+            // Sample the composition once. Rotor/walk animation bounds must not
+            // drive the camera's aim or zoom on subsequent frames.
+            observerAimOffset = focus - shot.subject.position;
+            observerRadius = Mathf.Max(.2f, bounds.extents.x, bounds.extents.y, bounds.extents.z);
             framedShot = ShotIndex;
-            ApplyObserverCamera(shot, bounds, t, true);
+            ApplyObserverCamera(shot, true);
             return;
         }
         view.fieldOfView = 52;
@@ -188,22 +192,30 @@ public sealed class AgentBriefingCinematic : IDisposable
         view.transform.SetPositionAndRotation(selected, Quaternion.LookRotation(focus - selected, Vector3.up));
     }
 
-    void ApplyObserverCamera(Shot shot, Bounds bounds, float t, bool firstFrame)
+    void ApplyObserverCamera(Shot shot, bool firstFrame)
     {
-        // This small sideways move depends only on shot time, never on agent position.
-        Vector3 slide = observerSlide * (Mathf.Sin(t * Mathf.PI * 2) * .45f);
-        float slideDistance = slide.magnitude;
-        if (slideDistance > .001f)
-            foreach (var hit in Physics.SphereCastAll(observerAnchor, .15f, slide.normalized, slideDistance, ~0, QueryTriggerInteraction.Ignore))
-                if (hit.transform != shot.subject && !hit.transform.IsChildOf(shot.subject))
-                    slideDistance = Mathf.Min(slideDistance, Mathf.Max(0, hit.distance - .1f));
-        Vector3 position = observerAnchor + (slide.sqrMagnitude > .001f ? slide.normalized * slideDistance : Vector3.zero);
-        Vector3 look = bounds.center - position;
+        Vector3 target = shot.subject.position + observerAimOffset;
+        // Use briefing time so repeated ApplyCamera calls in the same frame
+        // cannot advance the filter. Each new shot starts with fresh damping.
+        float delta = Mathf.Max(0, elapsed - observerUpdatedAt);
+        if (firstFrame)
+        {
+            observerFocus = target;
+            observerFocusVelocity = Vector3.zero;
+            observerFovVelocity = 0;
+        }
+        else if (delta > 0)
+            observerFocus = Vector3.SmoothDamp(observerFocus, target, ref observerFocusVelocity,
+                .5f, Mathf.Infinity, delta);
+        observerUpdatedAt = elapsed;
+        Vector3 look = observerFocus - observerAnchor;
         if (look.sqrMagnitude < .01f) return;
-        float radius = Mathf.Max(.2f, bounds.extents.x, bounds.extents.y, bounds.extents.z);
-        float framing = Mathf.Clamp(2 * Mathf.Atan(radius * 2.2f / look.magnitude) * Mathf.Rad2Deg, 6, 60);
-        view.fieldOfView = firstFrame ? framing : Mathf.MoveTowards(view.fieldOfView, framing, 16 * Time.unscaledDeltaTime);
-        view.transform.SetPositionAndRotation(position, Quaternion.LookRotation(look, Vector3.up));
+        float framing = Mathf.Clamp(2 * Mathf.Atan(observerRadius * 2.2f / look.magnitude) * Mathf.Rad2Deg, 26, 60);
+        if (firstFrame) view.fieldOfView = framing;
+        else if (delta > 0)
+            view.fieldOfView = Mathf.SmoothDamp(view.fieldOfView, framing, ref observerFovVelocity,
+                .8f, 12, delta);
+        view.transform.SetPositionAndRotation(observerAnchor, Quaternion.LookRotation(look, Vector3.up));
     }
 
     public void Draw()

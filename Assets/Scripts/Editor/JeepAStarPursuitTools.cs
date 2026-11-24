@@ -415,34 +415,13 @@ public static class JeepAStarPursuitTools
                 Check("Briefing reuses the provided outro music", briefing.MusicClip && briefing.MusicClip == briefingOutro.outroMusic);
                 briefing.Tick(briefing.OpeningDuration, false, .35f); briefing.ApplyCamera();
                 Check("Title opening leads into the drone introduction", !briefing.ShowingOpening && briefing.CurrentTitle == "RECON DRONE");
-                Vector3 droneCamera = briefingCamera.transform.position;
-                Vector3 originalDronePosition = briefingDrone.transform.position;
-                briefingDrone.transform.position += new Vector3(12, 2, 7); Physics.SyncTransforms();
-                briefing.ApplyCamera();
-                Vector3 droneInView = briefingCamera.WorldToViewportPoint(briefingDrone.transform.position);
-                Check("Drone camera stays at its world anchor while keeping the moving drone in view",
-                    Vector3.Distance(droneCamera, briefingCamera.transform.position) < .001f && droneInView.z > 0 &&
-                    droneInView.x > 0 && droneInView.x < 1 && droneInView.y > 0 && droneInView.y < 1);
-                briefingDrone.transform.position = originalDronePosition; Physics.SyncTransforms();
-                briefing.Tick(1, false, .35f); briefing.ApplyCamera();
-                Check("Drone camera sideways motion remains small and independent of travel", Vector3.Distance(droneCamera, briefingCamera.transform.position) <= .46f);
                 string[] expectedShots = { "PATROL JEEP", "PATROL SOLDIER", "ELITE SOLDIER", "STEAL THE SECRET. GET OUT." };
                 bool order = true;
                 for (int expectedIndex = 0; expectedIndex < expectedShots.Length; expectedIndex++)
                 {
                     string expectedShot = expectedShots[expectedIndex];
-                    briefing.Tick(expectedIndex == 0 ? briefing.ShotDuration - 1 : briefing.ShotDuration, false, .35f); briefing.ApplyCamera();
+                    briefing.Tick(briefing.ShotDuration, false, .35f); briefing.ApplyCamera();
                     order &= briefing.CurrentTitle == expectedShot && briefing.Active;
-                    if (expectedShot == "PATROL SOLDIER")
-                    {
-                        Vector3 patrolCamera = briefingCamera.transform.position, originalPatrolPosition = patrolObject.transform.position;
-                        patrolObject.transform.position += new Vector3(8, 0, 4); Physics.SyncTransforms();
-                        briefing.ApplyCamera();
-                        Vector3 patrolInView = briefingCamera.WorldToViewportPoint(patrolObject.transform.position + Vector3.up);
-                        Check("Patrol camera stays anchored while aiming at the moving soldier", Vector3.Distance(patrolCamera, briefingCamera.transform.position) < .001f &&
-                            patrolInView.z > 0 && patrolInView.x > 0 && patrolInView.x < 1 && patrolInView.y > 0 && patrolInView.y < 1);
-                        patrolObject.transform.position = originalPatrolPosition; Physics.SyncTransforms();
-                    }
                 }
                 Check("Briefing advances from drone through jeep, patrol, elite and objective", order);
                 Check("Natural briefing completion signals a single truck handoff and restores the camera", briefing.Tick(briefing.ShotDuration, false, .35f) &&
@@ -453,6 +432,44 @@ public static class JeepAStarPursuitTools
                     !briefing.Active && !briefing.Tick(.1f, true, .35f));
                 briefing.Begin(briefingIntro); briefing.Tick(briefing.OpeningDuration + 1, false, .35f);
                 Check("Space also skips from an agent shot into the truck sequence", briefing.Tick(.1f, true, .35f) && !briefing.Active);
+
+                void CheckStableObserver(Transform subject, int shotIndex, string label)
+                {
+                    briefing.Begin(briefingIntro);
+                    briefing.Tick(briefing.OpeningDuration + shotIndex * briefing.ShotDuration, false, .35f);
+                    briefing.ApplyCamera();
+                    Vector3 anchor = briefingCamera.transform.position, originalPosition = subject.position;
+                    Quaternion originalAim = briefingCamera.transform.rotation;
+                    float originalZoom = briefingCamera.fieldOfView, largestAimChange = 0, largestZoomChange = 0;
+                    Vector3 jitterAxis = briefingCamera.transform.right;
+                    try
+                    {
+                        for (int frame = 0; frame < 60; frame++)
+                        {
+                            subject.position = originalPosition + jitterAxis * (frame % 2 == 0 ? .2f : -.2f);
+                            briefing.Tick(1f / 60, false, .35f); briefing.ApplyCamera();
+                            largestAimChange = Mathf.Max(largestAimChange, Quaternion.Angle(originalAim, briefingCamera.transform.rotation));
+                            largestZoomChange = Mathf.Max(largestZoomChange, Mathf.Abs(originalZoom - briefingCamera.fieldOfView));
+                        }
+                        Check(label + " filters rapid subject jitter without zoom pumping", largestAimChange < .3f && largestZoomChange < .1f);
+
+                        subject.position = originalPosition + jitterAxis * 8;
+                        briefing.Tick(1f / 60, false, .35f); briefing.ApplyCamera();
+                        Quaternion initialPan = briefingCamera.transform.rotation;
+                        Check(label + " pans gradually instead of snapping to movement", Quaternion.Angle(originalAim, initialPan) < 1);
+                        briefing.ApplyCamera();
+                        Check(label + " does not advance damping twice in the same frame", Quaternion.Angle(initialPan, briefingCamera.transform.rotation) < .001f);
+                        for (int frame = 0; frame < 120; frame++)
+                        { briefing.Tick(1f / 60, false, .35f); briefing.ApplyCamera(); }
+                        Vector3 inView = briefingCamera.WorldToViewportPoint(subject.position + Vector3.up * (shotIndex == 2 ? 1 : 0));
+                        Check(label + " stays stationary and tracks sustained travel into view",
+                            Vector3.Distance(anchor, briefingCamera.transform.position) < .001f && Quaternion.Angle(originalAim, briefingCamera.transform.rotation) > 1 &&
+                            inView.z > 0 && inView.x > 0 && inView.x < 1 && inView.y > 0 && inView.y < 1);
+                    }
+                    finally { subject.position = originalPosition; Physics.SyncTransforms(); }
+                }
+                CheckStableObserver(briefingDrone.transform, 0, "Drone camera");
+                CheckStableObserver(patrolObject.transform, 2, "Patrol camera");
             }
 
         }
