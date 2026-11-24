@@ -8,6 +8,7 @@ public sealed class JeepDrivingAudio : MonoBehaviour
     public AudioClip drivingClip;
     [Range(0, 1)] public float volume = .3f;
     BaseRoadJeepPatrol patrol;
+    Operation1989.AI.Jeep.JeepAStarPursuit pursuit;
     AudioSource source;
 
     void Awake()
@@ -28,7 +29,10 @@ public sealed class JeepDrivingAudio : MonoBehaviour
     void Update()
     {
         if (!drivingClip) return;
+        if (!pursuit) pursuit = GetComponent<Operation1989.AI.Jeep.JeepAStarPursuit>();
         float load = patrol.isActiveAndEnabled ? Mathf.Clamp01(patrol.CurrentSpeed / Mathf.Max(.1f, patrol.speed)) : 0;
+        // While the A* pursuit drives the jeep the patrol is disabled, so follow the pursuit speed.
+        if (pursuit && pursuit.IsDriving) load = Mathf.Clamp01(pursuit.CurrentSpeed / Mathf.Max(.1f, pursuit.pursuitSpeed * .8f));
         source.volume = Mathf.MoveTowards(source.volume, volume * load, Time.deltaTime * .45f);
         source.pitch = Mathf.Lerp(source.pitch, Mathf.Lerp(.85f, 1.12f, load), 1 - Mathf.Exp(-2 * Time.deltaTime));
         if (source.volume > .001f && !source.isPlaying) source.Play();
