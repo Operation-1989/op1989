@@ -97,6 +97,7 @@ public sealed class EliteGuardController : MonoBehaviour
 
     void Update()
     {
+        if (GamePauseMenu.IsPaused) return;
         if (health.Dead) { if (!wasDead) movement.Stop(); wasDead = true; return; }
         // CombatHealth.Restore retains this component; detect restoration without changing patrol health code.
         if (wasDead) ResetGuard();

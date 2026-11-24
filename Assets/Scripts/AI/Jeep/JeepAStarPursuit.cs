@@ -53,6 +53,8 @@ namespace Operation1989.AI.Jeep
         Vector3 plannedGoal, observedVelocity, lastPosition;
         float lastPlanTime = -999f, lastReportTime = -999f, blockedTimer, searchTimer, unreachableSince = -1;
         bool ready, pendingReplan;
+        readonly PhysicsQueryBuffer physicsQuery = new PhysicsQueryBuffer();
+        static readonly float[] sightHeights = { 0f, .55f, -.25f };
 
         void Awake()
         {
@@ -121,6 +123,7 @@ namespace Operation1989.AI.Jeep
         }
         void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             Subscribe();
             if (DroneHasPlayer && Time.time - lastDroneReportTime > DroneAlertSystem.ContactTimeout) HandlePlayerLost();
             if (damage && damage.Disabled) { HasDirectContact = false; return; }
@@ -157,7 +160,7 @@ namespace Operation1989.AI.Jeep
                 Vector3.Angle(Flat(transform.forward), Flat(delta)) > sightAngle * .5f) return false;
             // Sample the torso and shoulders so a little low cover does not hide
             // the entire player. Every accepted sample still needs clear sight.
-            foreach (float height in new[] { 0f, .55f, -.25f })
+            foreach (float height in sightHeights)
             {
                 Vector3 aim = targetBounds.center + Vector3.up * (targetBounds.extents.y * height);
                 Vector3 ray = aim - origin;
@@ -395,8 +398,10 @@ namespace Operation1989.AI.Jeep
             Vector3 center = position + rotation * Vector3.Scale(footprint.center, scale) + Vector3.up * .25f;
             Vector3 half = new Vector3(size.x * .5f, size.y * .4f, size.z * .5f);
             float nearest = float.PositiveInfinity;
-            foreach (var hit in Physics.BoxCastAll(center, half, forward, rotation, distance, ~0, QueryTriggerInteraction.Ignore))
+            int count = physicsQuery.BoxCast(center, half, forward, rotation, distance);
+            for (int i = 0; i < count; i++)
             {
+                var hit = physicsQuery.Hits[i];
                 if (hit.transform.IsChildOf(transform) || hit.normal.y > .7f || hit.collider is TerrainCollider) continue;
                 if (grid.roadSurfaces != null && System.Array.IndexOf(grid.roadSurfaces, hit.collider) >= 0 && hit.normal.y > .5f) continue;
                 if (hit.distance >= nearest) continue;
@@ -411,8 +416,10 @@ namespace Operation1989.AI.Jeep
             Vector3 size = Vector3.Scale(footprint.size, new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
             Vector3 center = position + rotation * Vector3.Scale(footprint.center, scale) + Vector3.up * .25f;
             Vector3 half = new Vector3(size.x * .48f, size.y * .4f, size.z * .48f);
-            foreach (var collider in Physics.OverlapBox(center, half, rotation, ~0, QueryTriggerInteraction.Ignore))
+            int count = physicsQuery.OverlapBox(center, half, rotation);
+            for (int i = 0; i < count; i++)
             {
+                var collider = physicsQuery.Colliders[i];
                 if (collider.transform.IsChildOf(transform) || collider is TerrainCollider || collider.bounds.max.y <= position.y + .35f) continue;
                 return false;
             }
@@ -421,8 +428,10 @@ namespace Operation1989.AI.Jeep
         float GroundHeight(Vector3 position, float currentY)
         {
             float best = currentY, closest = float.PositiveInfinity;
-            foreach (var hit in Physics.RaycastAll(position + Vector3.up * 2, Vector3.down, 4, ~0, QueryTriggerInteraction.Ignore))
+            int count = physicsQuery.Raycast(position + Vector3.up * 2, Vector3.down, 4);
+            for (int i = 0; i < count; i++)
             {
+                var hit = physicsQuery.Hits[i];
                 if (hit.transform.IsChildOf(transform) || hit.normal.y < .85f || hit.collider.GetComponentInParent<CombatHealth>()) continue;
                 if (hit.collider.attachedRigidbody && !hit.collider.attachedRigidbody.isKinematic) continue;
                 float delta = Mathf.Abs(hit.point.y - currentY);

@@ -204,6 +204,70 @@ public static class JeepAStarPursuitTools
         }
         try
         {
+            // More than the initial 32 results verifies that performance buffers
+            // grow instead of silently dropping obstacles in a dense scene.
+            var denseRoot = new GameObject("Dense physics comparison"); denseRoot.transform.SetParent(root.transform);
+            Vector3 denseOrigin = center + Vector3.up * 30 + Vector3.back * 2;
+            for (int i = 0; i < 48; i++)
+            {
+                var item = Box("Dense obstacle " + i, center + Vector3.up * 30 + Vector3.forward * (i * .3f), Vector3.one * .2f);
+                item.transform.SetParent(denseRoot.transform);
+            }
+            Physics.SyncTransforms();
+            var query = new PhysicsQueryBuffer();
+            bool SameHits(RaycastHit[] expected, int count)
+            {
+                if (expected.Length != count) return false;
+                foreach (var hit in expected)
+                {
+                    bool found = false;
+                    for (int i = 0; i < count; i++) found |= query.Hits[i].collider == hit.collider;
+                    if (!found) return false;
+                }
+                return true;
+            }
+            bool SameOverlaps(Collider[] expected, int count)
+            {
+                if (expected.Length != count) return false;
+                foreach (var collider in expected)
+                {
+                    bool found = false;
+                    for (int i = 0; i < count; i++) found |= query.Colliders[i] == collider;
+                    if (!found) return false;
+                }
+                return true;
+            }
+            Check("Buffered raycast retains all dense-scene hits", SameHits(Physics.RaycastAll(denseOrigin, Vector3.forward, 20, ~0, QueryTriggerInteraction.Ignore), query.Raycast(denseOrigin, Vector3.forward, 20)));
+            Check("Buffered sphere cast matches all original hits", SameHits(Physics.SphereCastAll(denseOrigin, .1f, Vector3.forward, 20, ~0, QueryTriggerInteraction.Ignore), query.SphereCast(denseOrigin, .1f, Vector3.forward, 20)));
+            Check("Buffered box cast matches all original hits", SameHits(Physics.BoxCastAll(denseOrigin, Vector3.one * .1f, Vector3.forward, Quaternion.identity, 20, ~0, QueryTriggerInteraction.Ignore), query.BoxCast(denseOrigin, Vector3.one * .1f, Vector3.forward, Quaternion.identity, 20)));
+            Check("Buffered capsule cast matches all original hits", SameHits(Physics.CapsuleCastAll(denseOrigin - Vector3.up * .2f, denseOrigin + Vector3.up * .2f, .1f, Vector3.forward, 20, ~0, QueryTriggerInteraction.Ignore), query.CapsuleCast(denseOrigin - Vector3.up * .2f, denseOrigin + Vector3.up * .2f, .1f, Vector3.forward, 20)));
+            Vector3 overlapCenter = denseOrigin + Vector3.forward * 9;
+            Check("Buffered overlap box retains all dense-scene colliders", SameOverlaps(Physics.OverlapBox(overlapCenter, new Vector3(.5f, .5f, 10), Quaternion.identity, ~0, QueryTriggerInteraction.Ignore), query.OverlapBox(overlapCenter, new Vector3(.5f, .5f, 10), Quaternion.identity)));
+            Check("Buffered overlap sphere matches all original colliders", SameOverlaps(Physics.OverlapSphere(overlapCenter, 10, ~0, QueryTriggerInteraction.Ignore), query.OverlapSphere(overlapCenter, 10)));
+            Check("Buffered overlap capsule matches all original colliders", SameOverlaps(Physics.OverlapCapsule(denseOrigin, denseOrigin + Vector3.forward * 18, .5f, ~0, QueryTriggerInteraction.Ignore), query.OverlapCapsule(denseOrigin, denseOrigin + Vector3.forward * 18, .5f)));
+            query.Raycast(denseOrigin, Vector3.forward, 20);
+            var retainedHits = query.Hits;
+            long counterBefore = System.GC.GetAllocatedBytesForCurrentThread();
+            var counterProbe = new byte[4096]; System.GC.KeepAlive(counterProbe);
+            bool allocationCounterAvailable = System.GC.GetAllocatedBytesForCurrentThread() > counterBefore;
+            long before = System.GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 200; i++) query.Raycast(denseOrigin, Vector3.forward, 20);
+            long bufferedBytes = System.GC.GetAllocatedBytesForCurrentThread() - before;
+            before = System.GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 200; i++) Physics.RaycastAll(denseOrigin, Vector3.forward, 20, ~0, QueryTriggerInteraction.Ignore);
+            long originalBytes = System.GC.GetAllocatedBytesForCurrentThread() - before;
+            Check("Warmed physics queries retain their result storage without resizing", ReferenceEquals(retainedHits, query.Hits));
+            if (allocationCounterAvailable)
+            {
+                report.AppendLine($"Dense raycast managed allocations / 200 calls: original={originalBytes} bytes, buffered={bufferedBytes} bytes.");
+                Check("Warmed physics queries remove recurring result-array allocations", bufferedBytes < originalBytes / 10);
+            }
+            else report.AppendLine("Managed allocation byte counter is unavailable in this Unity runtime; buffer reuse was verified, no byte saving measured.");
+            var self = new GameObject("Raycast owner"); self.transform.SetParent(denseRoot.transform);
+            denseRoot.transform.GetChild(0).SetParent(self.transform);
+            Check("Rifle still hits the nearest non-owner surface", RifleWeapon.Trace(denseOrigin, Vector3.forward, 20, self.transform, out var rifleHit) && rifleHit.collider.name == "Dense obstacle 1");
+            Object.DestroyImmediate(denseRoot); Physics.SyncTransforms();
+
             var floor = Box("Test ground", center + Vector3.down * .5f, new Vector3(40, 1, 40));
             var owner = new GameObject("Test navigator"); owner.transform.SetParent(root.transform);
             var grid = owner.AddComponent<JeepNavigationGrid>();
@@ -212,6 +276,42 @@ public static class JeepAStarPursuitTools
             grid.drawPath = false;
             var path = new System.Collections.Generic.List<Vector3>();
             Vector3 start = center + Vector3.left * 8, goal = center + Vector3.right * 8;
+            bool SameSmoothingAsBefore()
+            {
+                const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                var type = typeof(JeepNavigationGrid);
+                var cells = (System.Collections.Generic.List<int>)type.GetField("pathCells", flags).GetValue(grid);
+                var costs = type.GetMethod("SearchCost", flags);
+                var line = type.GetMethod("LineCost", flags);
+                var point = type.GetMethod("CellCenterOnGround", flags);
+                float Cost(int cell) => (float)costs.Invoke(grid, new object[] { cell });
+                Vector3 Point(int cell) => (Vector3)point.Invoke(grid, new object[] { cell });
+                var prefix = new float[cells.Count];
+                for (int i = 1; i < cells.Count; i++)
+                {
+                    int a = cells[i - 1], b = cells[i];
+                    bool diagonal = a % grid.Width != b % grid.Width && a / grid.Width != b / grid.Width;
+                    prefix[i] = prefix[i - 1] + (diagonal ? grid.cellSize * 1.41421356f : grid.cellSize) * (Cost(a) + Cost(b)) * .5f;
+                }
+                var original = new System.Collections.Generic.List<Vector3> { Point(cells[0]) };
+                int anchor = 0, originalChecks = 0;
+                while (anchor < cells.Count - 1)
+                {
+                    int next = anchor + 1;
+                    for (int j = anchor + 2; j <= Mathf.Min(cells.Count - 1, anchor + 80); j++)
+                    {
+                        originalChecks++;
+                        float straight = (float)line.Invoke(grid, new object[] { cells[anchor], cells[j] });
+                        if (straight <= (prefix[j] - prefix[anchor]) * 1.001f + 1e-3f) next = j;
+                    }
+                    original.Add(Point(cells[next])); anchor = next;
+                }
+                if (Vector3.Distance(start, original[0]) > .1f) original.Insert(0, start); else original[0] = start;
+                report.AppendLine($"Jeep shortcut checks: previous={originalChecks}, optimized={grid.LastSmoothingChecks}.");
+                if (original.Count != path.Count) return false;
+                for (int i = 0; i < path.Count; i++) if (Vector3.Distance(path[i], original[i]) > .00001f) return false;
+                return true;
+            }
             bool SafePath()
             {
                 for (int i = 1; i < path.Count; i++)
@@ -224,10 +324,32 @@ public static class JeepAStarPursuitTools
             }
             grid.Build(owner.transform, 0);
             Check("Open ground returns shortest grid route", grid.FindPath(start, goal, path, 2, true) && Mathf.Abs(grid.LastPathCost - 16) < .01f && SafePath());
+            Check("Faster open-road smoothing preserves the previous route exactly", SameSmoothingAsBefore());
             var wall = Box("Building across patrol route", center + Vector3.up, new Vector3(2, 2, 18));
             grid.Build(owner.transform, 0);
             bool detour = grid.FindPath(start, goal, path, 2, true);
             Check("Building forces a clearance-safe detour", detour && grid.LastPathCost > 20 && SafePath());
+            Check("Faster detour smoothing preserves the previous route exactly", SameSmoothingAsBefore());
+            Check("Weighted route still matches previous smoothing", grid.FindPath(start, goal, path, 2, false) && SameSmoothingAsBefore());
+            const System.Reflection.BindingFlags privateFields = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            var solidCells = (bool[])typeof(JeepNavigationGrid).GetField("staticSolid", privateFields).GetValue(grid);
+            var blockedCells = (bool[])typeof(JeepNavigationGrid).GetField("blocked", privateFields).GetValue(grid);
+            float footprintDistance = grid.vehicleHalfWidth + grid.safetyMargin + grid.cellSize * .707107f;
+            int footprintCells = Mathf.CeilToInt(footprintDistance / grid.cellSize);
+            bool sameClearance = true;
+            for (int z = 0; z < grid.Depth; z++)
+                for (int x = 0; x < grid.Width; x++)
+                {
+                    bool originalBlocked = false;
+                    for (int dz = -footprintCells; dz <= footprintCells && !originalBlocked; dz++)
+                        for (int dx = -footprintCells; dx <= footprintCells && !originalBlocked; dx++)
+                        {
+                            if ((dx * dx + dz * dz) * grid.cellSize * grid.cellSize > footprintDistance * footprintDistance) continue;
+                            originalBlocked = x + dx < 0 || x + dx >= grid.Width || z + dz < 0 || z + dz >= grid.Depth || solidCells[(z + dz) * grid.Width + x + dx];
+                        }
+                    sameClearance &= originalBlocked == blockedCells[z * grid.Width + x];
+                }
+            Check("Precomputed footprint preserves every blocked/free grid cell", sameClearance);
             Check("A start inside a solid wall cannot teleport to a route", !grid.FindPath(center, goal, path, 2, true));
             Object.DestroyImmediate(wall);
             foreach (int side in new[] { -1, 1 })
@@ -265,6 +387,15 @@ public static class JeepAStarPursuitTools
                 bool low = flightPath && airPath.Count > 2;
                 foreach (var point in airPath) low &= Mathf.Abs(point.y - 6) < .01f;
                 Check("Low drone route detours around a tree without climbing overhead", low);
+                var originalAirPath = new System.Collections.Generic.List<Vector3>(airPath);
+                var reusableAirPath = new System.Collections.Generic.List<Vector3>();
+                bool reusableSame = flight.FindFlightPath(center + new Vector3(-10, 6, 0), center + new Vector3(10, 6, 0), reusableAirPath) && originalAirPath.Count == reusableAirPath.Count;
+                for (int i = 0; i < Mathf.Min(originalAirPath.Count, reusableAirPath.Count); i++) reusableSame &= originalAirPath[i] == reusableAirPath[i];
+                Check("Reused drone search workspace preserves the complete obstacle detour", reusableSame);
+                var newTree = Box("TreeOld_SpawnedDuringGame", start + Vector3.up * 4, Vector3.one);
+                passage.Refresh(player.transform);
+                Check("Repeated tree scan discovers newly spawned foliage", Physics.GetIgnoreCollision(playerBody, newTree.GetComponent<Collider>()));
+                Object.DestroyImmediate(newTree);
             }
 
             Quaternion facing = Quaternion.Euler(45, 20, 80);
@@ -470,6 +601,75 @@ public static class JeepAStarPursuitTools
                 }
                 CheckStableObserver(briefingDrone.transform, 0, "Drone camera");
                 CheckStableObserver(patrolObject.transform, 2, "Patrol camera");
+            }
+
+            bool streamingUnchanged = true;
+            long decodedBytes = 0;
+            foreach (string audioPath in new[] { "Vehicles/DroneFlying", "Vehicles/JeepDriving", "Vehicles/TruckMoving", "Ambiance/ControlRoomChatter", "Ambiance/OutroMusic" })
+            {
+                string assetPath = "Assets/Audio/SFX/" + audioPath + ".mp3";
+                var importer = AssetImporter.GetAtPath(assetPath) as AudioImporter;
+                var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(assetPath);
+                streamingUnchanged &= importer && importer.defaultSampleSettings.loadType == AudioClipLoadType.Streaming &&
+                    importer.defaultSampleSettings.quality == 1 && importer.defaultSampleSettings.sampleRateSetting == AudioSampleRateSetting.PreserveSampleRate && !importer.forceToMono;
+                if (clip) decodedBytes += (long)clip.samples * clip.channels * sizeof(float);
+            }
+            Check("Long recordings stream with original quality, sample rate and stereo", streamingUnchanged);
+            report.AppendLine($"Full float PCM size of the five streamed recordings: {decodedBytes / (1024.0 * 1024):F1} MiB (not an observed total RAM saving).");
+
+            float savedScale = Time.timeScale;
+            bool savedAudioPause = AudioListener.pause, savedCursorVisible = Cursor.visible;
+            CursorLockMode savedCursorLock = Cursor.lockState;
+            var pauseObject = new GameObject("Pause menu check"); pauseObject.transform.SetParent(root.transform);
+            var pauseMenu = pauseObject.AddComponent<GamePauseMenu>();
+            try
+            {
+                InitializeForCheck(pauseMenu);
+                Time.timeScale = .75f; AudioListener.pause = false;
+                var oldCursorLock = Cursor.lockState; bool oldCursorVisible = Cursor.visible;
+                using (var briefing = new AgentBriefingCinematic())
+                {
+                    briefing.Begin(briefingIntro);
+                    briefing.Tick(briefing.OpeningDuration + 1, false, .35f); briefing.ApplyCamera();
+                    string pausedTitle = briefing.CurrentTitle;
+                    Vector3 pausedCamera = briefingCamera.transform.position;
+                    pauseMenu.Pause();
+                    float pausedClock = GamePauseMenu.UnscaledTime;
+                    Check("Pause stops simulation and audio and releases the cursor", GamePauseMenu.IsPaused && GamePauseMenu.BlocksInput &&
+                        Time.timeScale == 0 && AudioListener.pause && Cursor.lockState == CursorLockMode.None && Cursor.visible);
+                    Check("Paused briefing ignores elapsed time and skip input", !briefing.Tick(100, true, .35f) && briefing.Active &&
+                        briefing.CurrentTitle == pausedTitle && GamePauseMenu.UnscaledTime == pausedClock);
+                    briefing.ApplyCamera();
+                    Check("Paused briefing camera holds its composition", Vector3.Distance(pausedCamera, briefingCamera.transform.position) < .00001f);
+                    var rifle = patrolObject.GetComponent<RifleWeapon>();
+                    int shotsBeforePause = rifle.ShotsFired;
+                    rifle.Shoot(center, Vector3.forward);
+                    Check("Pause menu clicks cannot fire a rifle", rifle.ShotsFired == shotsBeforePause);
+                    var deadPlayerObject = new GameObject("Paused respawn check"); deadPlayerObject.transform.SetParent(root.transform);
+                    var deadPlayerHealth = deadPlayerObject.AddComponent<CombatHealth>(); deadPlayerHealth.isPlayer = true;
+                    // Current defaults to zero until Awake; an expired respawn must still be held.
+                    deadPlayerHealth.GetType().GetMethod("Update", privateFields).Invoke(deadPlayerHealth, null);
+                    Check("Pause prevents an expired death timer from respawning the player", deadPlayerHealth.Dead);
+                    pauseMenu.Pause(); // Repeated pause must not overwrite the original globals.
+                    pauseMenu.Resume();
+                    Check("Resume restores the previous speed, audio and cursor state", !GamePauseMenu.IsPaused && Time.timeScale == .75f &&
+                        !AudioListener.pause && Cursor.lockState == oldCursorLock && Cursor.visible == oldCursorVisible);
+                    Check("Resume consumes its input frame to prevent click-through", GamePauseMenu.BlocksInput);
+                }
+                Check("Restart refuses an unsaved test scene instead of loading a checkpoint", !pauseMenu.CanRestart &&
+                    !pauseMenu.RestartFromBeginning() && EditorSceneManager.GetActiveScene() == checkScene);
+                pauseMenu.Pause();
+                pauseMenu.enabled = false;
+                // Edit Mode does not run the component lifecycle automatically.
+                typeof(GamePauseMenu).GetMethod("OnDisable", privateFields).Invoke(pauseMenu, null);
+                Check("Disabling the pause menu releases its global pause state", !GamePauseMenu.IsPaused && Time.timeScale == .75f && !AudioListener.pause);
+            }
+            finally
+            {
+                pauseMenu.Resume();
+                typeof(GamePauseMenu).GetMethod("ResetSession", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic).Invoke(null, null);
+                Time.timeScale = savedScale; AudioListener.pause = savedAudioPause;
+                Cursor.lockState = savedCursorLock; Cursor.visible = savedCursorVisible;
             }
 
         }

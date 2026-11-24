@@ -42,6 +42,7 @@ namespace Operation1989.AI.Drone
         private TacticalDroneNavigationGraph navGraph;
         private DroneDamage damageHandler;
         private List<Vector3> activePath = new List<Vector3>();
+        readonly PhysicsQueryBuffer movementQuery = new PhysicsQueryBuffer();
         private int currentPathIndex = 0;
         private Vector3 currentVelocity = Vector3.zero;
         private float hoverTimer = 0f;
@@ -92,7 +93,11 @@ namespace Operation1989.AI.Drone
 
         public void SetPath(List<Vector3> path)
         {
-            activePath = path != null ? new List<Vector3>(path) : new List<Vector3>();
+            if (!ReferenceEquals(activePath, path))
+            {
+                activePath.Clear();
+                if (path != null) activePath.AddRange(path);
+            }
             currentPathIndex = 0;
             while (currentPathIndex < activePath.Count && Vector3.Distance(transform.position, activePath[currentPathIndex]) < .15f)
                 currentPathIndex++;
@@ -109,6 +114,7 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             if (damageHandler && damageHandler.Destroyed)
             {
                 IsMoving = false;
@@ -150,9 +156,10 @@ namespace Operation1989.AI.Drone
             // Test every physical obstacle, not only props with a particular name/tag.
             if (dist > .05f)
             {
-                foreach (var hit in Physics.SphereCastAll(transform.position, .8f, delta.normalized,
-                    Mathf.Min(dist, whiskerDistance), ~0, QueryTriggerInteraction.Ignore))
+                int count = movementQuery.SphereCast(transform.position, .8f, delta.normalized, Mathf.Min(dist, whiskerDistance));
+                for (int i = 0; i < count; i++)
                 {
+                    var hit = movementQuery.Hits[i];
                     if (hit.transform.IsChildOf(transform)) continue;
                     ClearPath(); OnDynamicObstacleDetected?.Invoke(); return;
                 }
@@ -177,9 +184,10 @@ namespace Operation1989.AI.Drone
             Vector3 desiredVelocity = targetDir * targetSpeed;
             currentVelocity = Vector3.MoveTowards(currentVelocity, desiredVelocity, acceleration * Time.deltaTime);
             Vector3 step = Vector3.ClampMagnitude(currentVelocity * Time.deltaTime, delta.magnitude);
-            foreach (var hit in Physics.SphereCastAll(transform.position, .8f, step.normalized,
-                step.magnitude, ~0, QueryTriggerInteraction.Ignore))
+            int stepHits = movementQuery.SphereCast(transform.position, .8f, step.normalized, step.magnitude);
+            for (int i = 0; i < stepHits; i++)
             {
+                var hit = movementQuery.Hits[i];
                 if (hit.transform.IsChildOf(transform)) continue;
                 ClearPath(); OnDynamicObstacleDetected?.Invoke(); return;
             }

@@ -35,6 +35,7 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             EvaluateForwardChaining();
         }
 

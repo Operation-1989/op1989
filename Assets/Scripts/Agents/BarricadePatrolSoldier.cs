@@ -70,6 +70,7 @@ public sealed class BarricadePatrolSoldier : MonoBehaviour
     }
     void Update()
     {
+        if (GamePauseMenu.IsPaused) return;
         if (!player) ResolvePlayer();
         if (!player || !controller || !controller.enabled || (health && health.Dead)) return;
         var movement = player.GetComponent<FirstPersonController>();

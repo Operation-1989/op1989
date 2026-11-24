@@ -38,6 +38,13 @@ namespace Operation1989.AI.Drone
         // Dynamic edge blockage tracking: Key = (from << 16) | to
         private readonly HashSet<int> blockedEdges = new HashSet<int>();
         private List<Vector3> lastCalculatedPath = new List<Vector3>();
+        readonly PhysicsQueryBuffer physicsQuery = new PhysicsQueryBuffer();
+        readonly List<Vector3> flightPoints = new List<Vector3>();
+        readonly List<int> flightOpen = new List<int>();
+        readonly HashSet<Collider> flightSeen = new HashSet<Collider>();
+        float[] flightCost = Array.Empty<float>();
+        int[] flightParent = Array.Empty<int>();
+        bool[] flightClosed = Array.Empty<bool>();
 
         public IReadOnlyList<FlightNode> Nodes => nodes;
         public IReadOnlyList<Vector3> LastCalculatedPath => lastCalculatedPath;
@@ -256,8 +263,10 @@ namespace Operation1989.AI.Drone
         {
             float best = referenceY, difference = float.PositiveInfinity;
             bool knownGround = false;
-            foreach (var hit in Physics.RaycastAll(new Vector3(point.x, referenceY + 40f, point.z), Vector3.down, 80f, ~0, QueryTriggerInteraction.Ignore))
+            int count = physicsQuery.Raycast(new Vector3(point.x, referenceY + 40f, point.z), Vector3.down, 80f);
+            for (int i = 0; i < count; i++)
             {
+                var hit = physicsQuery.Hits[i];
                 if (hit.transform.IsChildOf(transform) || hit.normal.y < .8f || PlayerTreePassage.IsTreeCollider(hit.collider) ||
                     hit.collider.GetComponentInParent<CombatHealth>() || hit.collider.GetComponentInParent<DroneDamage>()) continue;
                 bool ground = hit.collider is TerrainCollider;
@@ -274,25 +283,35 @@ namespace Operation1989.AI.Drone
         public bool FindFlightPath(Vector3 start, Vector3 goal, out List<Vector3> path)
         {
             path = new List<Vector3>();
+            return FindFlightPath(start, goal, path);
+        }
+
+        public bool FindFlightPath(Vector3 start, Vector3 goal, List<Vector3> path)
+        {
+            path.Clear();
             // Low flight needs lateral waypoints around foliage/buildings, not only the
             // authored high perimeter nodes. These points are local to this search.
-            var points = new List<Vector3>();
+            var points = flightPoints;
+            points.Clear();
             foreach (var node in nodes) points.Add(node.position);
             Vector3 direct = goal - start;
             if (direct.sqrMagnitude > .01f)
             {
                 int mask = obstacleLayers.value == 0 ? ~0 : obstacleLayers.value;
-                var hits = Physics.SphereCastAll(start, .8f, direct.normalized, direct.magnitude, mask, QueryTriggerInteraction.Ignore);
-                Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-                var seen = new HashSet<Collider>();
-                foreach (var hit in hits)
+                int hitCount = physicsQuery.SphereCast(start, .8f, direct.normalized, direct.magnitude, mask);
+                var hits = physicsQuery.Hits;
+                Array.Sort(hits, 0, hitCount, PhysicsQueryBuffer.ByDistance);
+                var seen = flightSeen;
+                seen.Clear();
+                for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
                 {
+                    var hit = hits[hitIndex];
                     if (hit.transform.IsChildOf(transform) || !seen.Add(hit.collider)) continue;
                     var bounds = hit.collider.bounds;
                     if (bounds.size.x > 120 || bounds.size.z > 120) bounds = new Bounds(hit.point, new Vector3(16, 8, 16));
                     bounds.Expand(new Vector3(4, 0, 4));
-                    foreach (int x in new[] { -1, 0, 1 })
-                        foreach (int z in new[] { -1, 0, 1 })
+                    for (int x = -1; x <= 1; x++)
+                        for (int z = -1; z <= 1; z++)
                         {
                             if (x == 0 && z == 0) continue;
                             points.Add(new Vector3(bounds.center.x + x * bounds.extents.x, goal.y,
@@ -304,11 +323,20 @@ namespace Operation1989.AI.Drone
             int first = points.Count; points.Add(start);
             int last = points.Count; points.Add(goal);
             int count = points.Count;
-            var positions = points.ToArray();
-            var cost = new float[count]; var parent = new int[count]; var closed = new bool[count];
+            var positions = points;
+            if (flightCost.Length < count)
+            {
+                int capacity = Mathf.Max(count, Mathf.Max(16, flightCost.Length * 2));
+                Array.Resize(ref flightCost, capacity);
+                Array.Resize(ref flightParent, capacity);
+                Array.Resize(ref flightClosed, capacity);
+            }
+            var cost = flightCost; var parent = flightParent; var closed = flightClosed;
+            Array.Clear(closed, 0, count);
             for (int i = 0; i < count; i++) { cost[i] = float.PositiveInfinity; parent[i] = -1; }
             cost[first] = 0;
-            var open = new List<int> { first };
+            var open = flightOpen;
+            open.Clear(); open.Add(first);
             LastNodesExploredCount = 0;
             while (open.Count > 0)
             {
@@ -319,7 +347,7 @@ namespace Operation1989.AI.Drone
                 if (current == last)
                 {
                     for (int i = last; i >= 0; i = parent[i]) path.Add(positions[i]);
-                    path.Reverse(); lastCalculatedPath = new List<Vector3>(path); return true;
+                    path.Reverse(); lastCalculatedPath.Clear(); lastCalculatedPath.AddRange(path); return true;
                 }
                 for (int i = 0; i < count; i++)
                 {
@@ -340,10 +368,18 @@ namespace Operation1989.AI.Drone
             Vector3 delta = to - from;
             if (delta.sqrMagnitude < .001f) return true;
             int mask = obstacleLayers.value == 0 ? ~0 : obstacleLayers.value;
-            foreach (var hit in Physics.SphereCastAll(from, .8f, delta.normalized, delta.magnitude, mask, QueryTriggerInteraction.Ignore))
+            int hitCount = physicsQuery.SphereCast(from, .8f, delta.normalized, delta.magnitude, mask);
+            for (int i = 0; i < hitCount; i++)
+            {
+                var hit = physicsQuery.Hits[i];
                 if (!hit.transform.IsChildOf(transform)) return false;
-            foreach (var collider in Physics.OverlapSphere(to, .8f, mask, QueryTriggerInteraction.Ignore))
+            }
+            int overlapCount = physicsQuery.OverlapSphere(to, .8f, mask);
+            for (int i = 0; i < overlapCount; i++)
+            {
+                var collider = physicsQuery.Colliders[i];
                 if (!collider.transform.IsChildOf(transform)) return false;
+            }
             return true;
         }
 

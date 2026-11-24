@@ -22,6 +22,7 @@ public sealed class MissionAmbientAudio : MonoBehaviour
     int nextClip;
     CombatHealth health;
     bool flybyActive;
+    readonly PhysicsQueryBuffer ceilingQuery = new PhysicsQueryBuffer();
 
     public bool InsideControlRoom(Vector3 position)
     {
@@ -35,8 +36,12 @@ public sealed class MissionAmbientAudio : MonoBehaviour
     {
         if (InsideControlRoom(position)) return false;
         // Ignore the player's own colliders; a solid ceiling suppresses passes in other buildings too.
-        foreach (var hit in Physics.RaycastAll(position + Vector3.up * 1.7f, Vector3.up, 40, ~0, QueryTriggerInteraction.Ignore))
+        int count = ceilingQuery.Raycast(position + Vector3.up * 1.7f, Vector3.up, 40);
+        for (int i = 0; i < count; i++)
+        {
+            var hit = ceilingQuery.Hits[i];
             if (!hit.transform.IsChildOf(player) && hit.normal.y < -.5f) return false;
+        }
         return true;
     }
 
@@ -88,6 +93,7 @@ public sealed class MissionAmbientAudio : MonoBehaviour
 
     void Update()
     {
+        if (GamePauseMenu.IsPaused) return;
         if (!player) return;
         float dt = Time.deltaTime;
         bool missionActive = (!intro || intro.HandedOff) && (!health || !health.Dead);

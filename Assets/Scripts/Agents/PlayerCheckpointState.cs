@@ -12,7 +12,7 @@ public sealed class PlayerCheckpointState : MonoBehaviour
     public string DisplayName => HasCheckpoint ? active.checkpointName : "Inside the gate";
     public Vector3 RespawnPosition => active.respawnPoint.position;
     public Quaternion RespawnRotation => active.respawnPoint.rotation;
-    public bool NotificationVisible => HasCheckpoint && health && !health.Dead && Time.unscaledTime < notificationUntil;
+    public bool NotificationVisible => HasCheckpoint && health && !health.Dead && GamePauseMenu.UnscaledTime < notificationUntil;
 
     void Awake() { health = GetComponent<CombatHealth>(); Clear(); }
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -26,11 +26,12 @@ public sealed class PlayerCheckpointState : MonoBehaviour
         if (!health) health = GetComponent<CombatHealth>();
         if (!health || !health.isPlayer || health.Dead || !checkpoint || !checkpoint.respawnPoint ||
             (HasCheckpoint && checkpoint.priority <= active.priority)) return false;
-        active = checkpoint; notificationUntil = Time.unscaledTime + 3;
+        active = checkpoint; notificationUntil = GamePauseMenu.UnscaledTime + 3;
         return true;
     }
     void OnGUI()
     {
+        if (GamePauseMenu.IsPaused) return;
         if (!NotificationVisible) return;
         if (label == null)
         {

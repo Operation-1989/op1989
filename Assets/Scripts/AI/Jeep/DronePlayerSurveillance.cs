@@ -45,6 +45,7 @@ namespace Operation1989.AI.Jeep
 
         void LateUpdate()
         {
+            if (GamePauseMenu.IsPaused) return;
             scanTimer += Time.deltaTime;
             if (scanTimer < scanInterval) return;
             scanTimer = 0;

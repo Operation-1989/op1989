@@ -43,6 +43,9 @@ namespace Operation1989.AI.Drone
         private float searchTimer = 0f;
         private float patrolRetryTimer = 0f;
         private Vector3 activeDestination;
+        readonly List<Vector3> plannedPath = new List<Vector3>();
+        static readonly float[] trackingAngles = { 0f, -35f, 35f, -65f, 65f };
+        [SerializeField] private bool logPathDecisions;
 
         private void Awake()
         {
@@ -89,6 +92,7 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             if (damageHandler && damageHandler.Destroyed)
             {
                 combat.ShutDownAllCombatSystems();
@@ -142,14 +146,15 @@ namespace Operation1989.AI.Drone
             if (movement.IsMoving && Vector3.Distance(desired, lastTrackingGoal) < 2f) return;
             lastTrackingGoal = desired;
             // If the preferred spot is occupied, choose another forward spot at the same low height.
-            foreach (float distance in new[] { trackingDistance, trackingDistance + 4f })
-                foreach (float angle in new[] { 0f, -35f, 35f, -65f, 65f })
+            for (int distanceIndex = 0; distanceIndex < 2; distanceIndex++)
+                foreach (float angle in trackingAngles)
                 {
+                    float distance = trackingDistance + distanceIndex * 4f;
                     Vector3 heading = Quaternion.Euler(0, angle, 0) * trackingHeading;
                     Vector3 candidate = TrackingPoint(target, heading, ground, distance, trackingHeight);
                     candidate.y = navGraph.GroundHeightAt(candidate, ground) + trackingHeight;
-                    if (!navGraph.FindFlightPath(transform.position, candidate, out var path)) continue;
-                    movement.SetPath(path); return;
+                    if (!navGraph.FindFlightPath(transform.position, candidate, plannedPath)) continue;
+                    movement.SetPath(plannedPath); return;
                 }
             // Keep the existing safe route; never retreat to the old 18 m overhead position.
         }
@@ -214,11 +219,11 @@ namespace Operation1989.AI.Drone
 
             currentGoalNode = goalIndex;
 
-            if (navGraph.FindFlightPath(transform.position, navGraph.Nodes[goalIndex].position, out List<Vector3> path))
+            if (navGraph.FindFlightPath(transform.position, navGraph.Nodes[goalIndex].position, plannedPath))
             {
-                movement.SetPath(path);
+                movement.SetPath(plannedPath);
                 activeDestination = navGraph.Nodes[goalIndex].position;
-                Debug.Log($"[Tactical Drone Controller] A* Path calculated to Node {goalIndex} ({navGraph.Nodes[goalIndex].label})");
+                if (logPathDecisions) Debug.Log($"[Tactical Drone Controller] A* Path calculated to Node {goalIndex} ({navGraph.Nodes[goalIndex].label})");
             }
         }
 

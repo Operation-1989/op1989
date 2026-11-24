@@ -47,6 +47,7 @@ namespace Operation1989.AI.Jeep
         }
         void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             TickRepair(Time.time);
             if (!smoke || Current >= maximumHealth) return;
             UpdateSmokeDensity();

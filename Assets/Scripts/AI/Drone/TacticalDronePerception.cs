@@ -63,6 +63,9 @@ namespace Operation1989.AI.Drone
         private Vector3 sampledVelocity;
         private bool wasPreviouslySpotted = false;
         private DroneDamage damageHandler;
+        private IntroTruckSequence intro;
+        readonly PhysicsQueryBuffer sightQuery = new PhysicsQueryBuffer();
+        [SerializeField] private bool logAcousticDetections;
 
         public Transform TargetPlayer => targetPlayer;
 
@@ -113,6 +116,7 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             if (damageHandler && damageHandler.Destroyed)
             {
                 CanSeePlayer = false;
@@ -156,7 +160,7 @@ namespace Operation1989.AI.Drone
             }
 
             // Check 1: Intro Cutscene Gatekeeper
-            var intro = FindAnyObjectByType<IntroTruckSequence>();
+            if (!intro) intro = FindAnyObjectByType<IntroTruckSequence>();
             if (intro && (!intro.HandedOff || !intro.Entered))
             {
                 CanSeePlayer = false;
@@ -249,11 +253,13 @@ namespace Operation1989.AI.Drone
             bool hitCover = false;
             string obstructionName = "";
 
-            var hits = Physics.RaycastAll(eyeOrigin, delta.normalized, distance, obstacleLayers, QueryTriggerInteraction.Ignore);
-            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            int count = sightQuery.Raycast(eyeOrigin, delta.normalized, distance, obstacleLayers);
+            var hits = sightQuery.Hits;
+            Array.Sort(hits, 0, count, PhysicsQueryBuffer.ByDistance);
 
-            foreach (var h in hits)
+            for (int i = 0; i < count; i++)
             {
+                var h = hits[i];
                 // Ignore triggers
                 if (h.collider != null && h.collider.isTrigger) continue;
 
@@ -319,7 +325,7 @@ namespace Operation1989.AI.Drone
         {
             // Acoustic gunshot is heard only if origin is inside the base or within perimeter
             if (!targetPlayer || origin.z < entranceGateZBoundary) return;
-            var intro = FindAnyObjectByType<IntroTruckSequence>();
+            if (!intro) intro = FindAnyObjectByType<IntroTruckSequence>();
             if (intro && (!intro.HandedOff || !intro.Entered)) return;
             // Ignore the guards' gunfire; only player shots should create player evidence.
             if (Vector3.Distance(origin, targetPlayer.position) > 4f) return;
@@ -329,7 +335,7 @@ namespace Operation1989.AI.Drone
                 HeardGunshot = true;
                 lastGunshotTimestamp = Time.time;
                 LastKnownPosition = origin;
-                Debug.Log($"[Tactical Drone Perception] Acoustic sensor detected gunfire at {origin} (Distance: {dist:F1}m)");
+                if (logAcousticDetections) Debug.Log($"[Tactical Drone Perception] Acoustic sensor detected gunfire at {origin} (Distance: {dist:F1}m)");
             }
         }
 

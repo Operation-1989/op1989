@@ -72,6 +72,7 @@ namespace Operation1989.AI.Jeep
         public int LastExpandedNodes { get; private set; }
         public float LastPathCost { get; private set; }
         public double LastSearchMilliseconds { get; private set; }
+        public int LastSmoothingChecks { get; private set; }
         public readonly List<Vector3> LastRawPath = new List<Vector3>();
         public readonly List<Vector3> LastPath = new List<Vector3>();
 
@@ -90,6 +91,10 @@ namespace Operation1989.AI.Jeep
         // Search buffers (re-used, no allocation per search)
         float[] g; int[] parent; int[] closedStamp; int[] openStamp; int stamp;
         readonly MinHeap open = new MinHeap();
+        readonly List<int> pathCells = new List<int>();
+        float[] smoothingPrefix = Array.Empty<float>();
+        readonly PhysicsQueryBuffer buildQuery = new PhysicsQueryBuffer();
+        readonly List<Vector2Int> clearanceOffsets = new List<Vector2Int>();
 
         Vector3 origin;
         float referenceY;
@@ -114,7 +119,7 @@ namespace Operation1989.AI.Jeep
         /// <param name="extraBounds">Optional area that must be inside the grid (e.g. patrol route).</param>
         public void Build(Transform owner, float referenceHeight, Bounds? extraBounds = null)
         {
-            var timer = Stopwatch.StartNew();
+            long timer = Stopwatch.GetTimestamp();
             Physics.SyncTransforms();
             IsBuilt = false;
             ignoredCache.Clear();
@@ -141,15 +146,13 @@ namespace Operation1989.AI.Jeep
             g = new float[n]; parent = new int[n]; closedStamp = new int[n]; openStamp = new int[n]; stamp = 0;
             nextTemporaryExpiry = float.PositiveInfinity;
 
-            var hits = new RaycastHit[32];
-            var overlaps = new Collider[32];
             for (int z = 0; z < Depth; z++)
                 for (int x = 0; x < Width; x++)
-                    SampleCell(x, z, hits, overlaps);
+                    SampleCell(x, z);
 
             RecomputeClearanceAndCost();
             IsBuilt = true;
-            BuildMilliseconds = timer.Elapsed.TotalMilliseconds;
+            BuildMilliseconds = ElapsedMilliseconds(timer);
             Debug.Log($"[Jeep A*] Navigation grid built: {Width}x{Depth} cells of {cellSize:F2} m, " +
                       $"{BlockedCellCount} blocked, {BuildMilliseconds:F0} ms.");
         }
@@ -171,20 +174,15 @@ namespace Operation1989.AI.Jeep
             areaSize = new Vector2(b.size.x + autoBoundsMargin * 2, b.size.z + autoBoundsMargin * 2);
         }
 
-        void SampleCell(int x, int z, RaycastHit[] hits, Collider[] overlaps)
+        void SampleCell(int x, int z)
         {
             int i = Index(x, z);
             Vector3 c = CellCenterFlat(x, z);
 
             // Ground: the highest walkable surface near the jeep's height. Roofs are too high,
             // low crates create a step that the neighbour test rejects.
-            int count = Physics.RaycastNonAlloc(new Vector3(c.x, referenceY + 60f, c.z), Vector3.down, hits, 120f,
-                ~0, QueryTriggerInteraction.Ignore);
-            if (count == hits.Length)
-            {
-                hits = Physics.RaycastAll(new Vector3(c.x, referenceY + 60f, c.z), Vector3.down, 120f, ~0, QueryTriggerInteraction.Ignore);
-                count = hits.Length;
-            }
+            int count = buildQuery.Raycast(new Vector3(c.x, referenceY + 60f, c.z), Vector3.down, 120f);
+            var hits = buildQuery.Hits;
             float best = float.NaN; bool bestRoad = false, bestKnownGround = false;
             for (int h = 0; h < count; h++)
             {
@@ -207,13 +205,8 @@ namespace Operation1989.AI.Jeep
             // Obstacles: anything occupying the body height of the jeep above this ground cell.
             float half = (obstacleTop - obstacleBottom) * .5f;
             var center = new Vector3(c.x, best + obstacleBottom + half, c.z);
-            int o = Physics.OverlapBoxNonAlloc(center, new Vector3(cellSize * .5f, half, cellSize * .5f), overlaps,
-                Quaternion.identity, obstacleLayers, QueryTriggerInteraction.Ignore);
-            if (o == overlaps.Length)
-            {
-                overlaps = Physics.OverlapBox(center, new Vector3(cellSize * .5f, half, cellSize * .5f), Quaternion.identity, obstacleLayers, QueryTriggerInteraction.Ignore);
-                o = overlaps.Length;
-            }
+            int o = buildQuery.OverlapBox(center, new Vector3(cellSize * .5f, half, cellSize * .5f), Quaternion.identity, obstacleLayers);
+            var overlaps = buildQuery.Colliders;
             bool solid = false;
             for (int k = 0; k < o && !solid; k++)
             {
@@ -284,11 +277,20 @@ namespace Operation1989.AI.Jeep
 
             int blockedCount = 0;
             float hard = HardClearance;
+            // Identical circular footprint stencil for every cell. Construct its
+            // offsets once per update rather than repeating the float tests per cell.
+            clearanceOffsets.Clear();
+            float distance = hard + cellSize * .707107f;
+            int cells = Mathf.CeilToInt(distance / cellSize);
+            for (int dz = -cells; dz <= cells; dz++)
+                for (int dx = -cells; dx <= cells; dx++)
+                    if ((dx * dx + dz * dz) * cellSize * cellSize <= distance * distance)
+                        clearanceOffsets.Add(new Vector2Int(dx, dz));
             for (int i = 0; i < n; i++)
             {
                 // Cell centre distance minus half a cell = conservative distance to the obstacle edge.
                 float free = clearance[i] - cellSize * .5f;
-                blocked[i] = !HasBodyClearance(i % Width, i / Width, hard, now);
+                blocked[i] = !HasBodyClearance(i % Width, i / Width, now);
                 if (blocked[i]) { blockedCount++; cellCost[i] = float.PositiveInfinity; continue; }
 
                 float cost = road[i] ? roadCost : offRoadCost;
@@ -299,18 +301,14 @@ namespace Operation1989.AI.Jeep
             BlockedCellCount = blockedCount;
         }
 
-        bool HasBodyClearance(int x, int z, float radius, float now)
+        bool HasBodyClearance(int x, int z, float now)
         {
-            float distance = radius + cellSize * .707107f;
-            int cells = Mathf.CeilToInt(distance / cellSize);
-            for (int dz = -cells; dz <= cells; dz++)
-                for (int dx = -cells; dx <= cells; dx++)
-                {
-                    if ((dx * dx + dz * dz) * cellSize * cellSize > distance * distance) continue;
-                    if (!InGrid(x + dx, z + dz)) return false;
-                    int i = Index(x + dx, z + dz);
-                    if (staticSolid[i] || tempUntil[i] > now) return false;
-                }
+            foreach (var offset in clearanceOffsets)
+            {
+                if (!InGrid(x + offset.x, z + offset.y)) return false;
+                int i = Index(x + offset.x, z + offset.y);
+                if (staticSolid[i] || tempUntil[i] > now) return false;
+            }
             return true;
         }
 
@@ -348,8 +346,9 @@ namespace Operation1989.AI.Jeep
             result.Clear();
             LastRawPath.Clear(); LastPath.Clear();
             LastExpandedNodes = 0; LastPathCost = 0;
+            LastSmoothingChecks = 0;
             if (!IsBuilt) return false;
-            var timer = Stopwatch.StartNew();
+            long timer = Stopwatch.GetTimestamp();
             RefreshExpiredObstacles();
 
             // The jeep may stand inside the safety margin (e.g. stopped at a wall): use the nearest free cell.
@@ -358,7 +357,7 @@ namespace Operation1989.AI.Jeep
             int goalCell = NearestTraversable(goal, goalSearchRadius);
             if (startCell < 0 || goalCell < 0)
             {
-                LastSearchMilliseconds = timer.Elapsed.TotalMilliseconds;
+                LastSearchMilliseconds = ElapsedMilliseconds(timer);
                 return false;
             }
 
@@ -414,11 +413,12 @@ namespace Operation1989.AI.Jeep
                     float distance = new Vector2(point.x - goal.x, point.z - goal.z).sqrMagnitude;
                     if (distance < best) { best = distance; reachable = i; }
                 }
-                if (reachable < 0) { LastSearchMilliseconds = timer.Elapsed.TotalMilliseconds; return false; }
+                if (reachable < 0) { LastSearchMilliseconds = ElapsedMilliseconds(timer); return false; }
                 goalCell = reachable;
             }
 
-            var cells = new List<int>();
+            var cells = pathCells;
+            cells.Clear();
             for (int c = goalCell; c >= 0; c = parent[c]) cells.Add(c);
             cells.Reverse();
             LastPathCost = g[goalCell];
@@ -433,9 +433,12 @@ namespace Operation1989.AI.Jeep
                 else result[0] = start;
             }
             LastPath.AddRange(result);
-            LastSearchMilliseconds = timer.Elapsed.TotalMilliseconds;
+            LastSearchMilliseconds = ElapsedMilliseconds(timer);
             return true;
         }
+
+        static double ElapsedMilliseconds(long started) =>
+            (Stopwatch.GetTimestamp() - started) * (1000.0 / Stopwatch.Frequency);
 
         /// <summary>Octile distance x cheapest cost per metre: never overestimates the true cost.</summary>
         float Heuristic(int a, int b)
@@ -493,7 +496,10 @@ namespace Operation1989.AI.Jeep
             int count = cells.Count;
             if (count == 0) return;
             // Cost of the raw A* path up to every cell, for fair comparison with shortcuts.
-            var prefix = new float[count];
+            if (smoothingPrefix.Length < count)
+                Array.Resize(ref smoothingPrefix, Mathf.Max(count, Mathf.Max(16, smoothingPrefix.Length * 2)));
+            var prefix = smoothingPrefix;
+            prefix[0] = 0;
             for (int i = 1; i < count; i++)
             {
                 int a = cells[i - 1], b = cells[i];
@@ -507,10 +513,14 @@ namespace Operation1989.AI.Jeep
             {
                 int bestNext = anchor + 1;
                 int limit = Mathf.Min(count - 1, anchor + 80);
-                for (int j = anchor + 2; j <= limit; j++)
+                // The original loop selected the farthest acceptable shortcut.
+                // Checking backwards returns exactly that shortcut without testing
+                // every nearer one first (especially expensive on long open roads).
+                for (int j = limit; j >= anchor + 2; j--)
                 {
+                    LastSmoothingChecks++;
                     float straight = LineCost(cells[anchor], cells[j]);
-                    if (straight <= (prefix[j] - prefix[anchor]) * 1.001f + 1e-3f) bestNext = j;
+                    if (straight <= (prefix[j] - prefix[anchor]) * 1.001f + 1e-3f) { bestNext = j; break; }
                 }
                 output.Add(CellCenterOnGround(cells[bestNext]));
                 anchor = bestNext;

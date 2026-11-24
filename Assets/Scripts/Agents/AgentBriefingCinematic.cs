@@ -105,7 +105,7 @@ public sealed class AgentBriefingCinematic : IDisposable
     /// <returns>True once this briefing finishes; the caller starts the truck on that frame.</returns>
     public bool Tick(float unscaledDeltaTime, bool skipPressed, float volume)
     {
-        if (!Active) return false;
+        if (!Active || GamePauseMenu.BlocksInput) return false;
         elapsed += Mathf.Max(0, unscaledDeltaTime);
         if (skipPressed || elapsed >= Duration) { Stop(); return true; }
         if (music)
@@ -132,7 +132,7 @@ public sealed class AgentBriefingCinematic : IDisposable
 
     public void ApplyCamera()
     {
-        if (!Active || !view || ShotIndex < 0) return;
+        if (!Active || !view || ShotIndex < 0 || GamePauseMenu.BlocksInput) return;
         var shot = shots[ShotIndex];
         if (!shot.subject) return;
         float t = Mathf.Clamp01((elapsed - openingSeconds - ShotIndex * shotSeconds) / shotSeconds);
@@ -256,7 +256,7 @@ public sealed class AgentBriefingCinematic : IDisposable
         MissionHudStyle.Fill(new Rect(0, 0, width, 46), new Color(.01f, .02f, .015f, .94f));
         MissionHudStyle.Fill(new Rect(0, height - 174, width, 174), new Color(.01f, .02f, .015f, .94f));
         var shot = shots[ShotIndex];
-        GUI.Label(new Rect(42, 13, 460, 22), "OPERATION 1989  /  FIELD BRIEFING", eyebrow);
+        GUI.Label(new Rect(152, 13, 460, 22), "OPERATION 1989  /  FIELD BRIEFING", eyebrow);
         float bottom = height - 151;
         GUI.Label(new Rect(42, bottom, width - 84, 22), $"{ShotIndex + 1:00} / {ShotCount:00}   {shot.location}", eyebrow);
         GUI.Label(new Rect(42, bottom + 26, width - 84, 36), shot.title, title);

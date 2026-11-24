@@ -86,6 +86,7 @@ public sealed class IntelTheftMission : MonoBehaviour
     void Start() { terminalPopup.Initialize(transform); ResetForCheckpoint(); }
     void Update()
     {
+        if (GamePauseMenu.BlocksInput) return;
         if (!player || !terminal || !extraction) { terminalPopup.Hide(); return; }
         if (health && health.Dead) { if (State != Phase.FindComputer) ResetForCheckpoint(); terminalPopup.Hide(); return; }
         if (State == Phase.Downloading)
@@ -188,6 +189,7 @@ public sealed class IntelTheftMission : MonoBehaviour
     }
     void OnGUI()
     {
+        if (GamePauseMenu.IsPaused) return;
         if (State == Phase.Extracting) return;
         if (!player || (health && health.Dead) || (intro && (!intro.HandedOff || !intro.Entered))) return;
         int previousDepth = GUI.depth;

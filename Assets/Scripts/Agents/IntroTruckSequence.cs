@@ -78,6 +78,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
     Quaternion cameraStartRotation;
     readonly IntroMissionHud missionHud = new IntroMissionHud();
     readonly AgentBriefingCinematic agentBriefing = new AgentBriefingCinematic();
+    readonly PhysicsQueryBuffer groundQuery = new PhysicsQueryBuffer();
     public bool BriefingActive => briefingPending || agentBriefing.Active;
     public bool MissionCapturesPointer => BriefingActive || missionHud.CapturesPointer;
     public bool MissionVisible => missionHud.Visible;
@@ -207,6 +208,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void Update()
     {
+        if (GamePauseMenu.BlocksInput) return;
         bool skipPressed = Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame;
         if (briefingPending)
         {
@@ -314,6 +316,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void LateUpdate()
     {
+        if (GamePauseMenu.BlocksInput) return;
         if (BriefingActive) { agentBriefing.ApplyCamera(); return; }
         if (!handedOff) UpdateShot();
     }
@@ -386,11 +389,15 @@ public sealed class IntroTruckSequence : MonoBehaviour
         {
             Vector3 origin = next + yaw * GroundProbes[probeIndex];
             float best = float.NegativeInfinity;
-            foreach (var hit in Physics.RaycastAll(origin, Vector3.down, 4, groundLayers, QueryTriggerInteraction.Ignore))
+            int groundHitCount = groundQuery.Raycast(origin, Vector3.down, 4, groundLayers);
+            for (int hitIndex = 0; hitIndex < groundHitCount; hitIndex++)
+            {
+                var hit = groundQuery.Hits[hitIndex];
                 if (!hit.transform.IsChildOf(truck) && hit.normal.y > 0.8f &&
                     (groundSurfaces == null || groundSurfaces.Length == 0 || System.Array.IndexOf(groundSurfaces, hit.collider) >= 0) &&
                     Mathf.Abs(hit.point.y + groundOffset - next.y) < 0.6f)
                     best = Mathf.Max(best, hit.point.y);
+            }
             if (!float.IsNegativeInfinity(best))
             {
                 if (probeIndex < 2) { rearGround += best; rearContacts++; }
@@ -443,6 +450,7 @@ public sealed class IntroTruckSequence : MonoBehaviour
 
     void OnGUI()
     {
+        if (GamePauseMenu.IsPaused) return;
         if (BriefingActive) { agentBriefing.Draw(); return; }
         if (intelMission && (intelMission.State == IntelTheftMission.Phase.Extracting || intelMission.State == IntelTheftMission.Phase.Complete)) return;
         var health = player ? player.GetComponent<CombatHealth>() : null;

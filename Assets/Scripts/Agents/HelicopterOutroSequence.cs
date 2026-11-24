@@ -244,6 +244,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     }
     void Update()
     {
+        if (GamePauseMenu.BlocksInput) return;
         Initialize();
         if (!initialized) return;
         // Music has its own audio-clock envelope and must keep updating after the visuals finish.
@@ -301,6 +302,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     }
     void LateUpdate()
     {
+        if (GamePauseMenu.BlocksInput) return;
         if (!Running || Finished) return;
         ApplyFlightAndCamera(Elapsed);
         if (Elapsed >= EndsAt) Finish();

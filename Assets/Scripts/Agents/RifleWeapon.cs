@@ -15,6 +15,7 @@ public sealed class RifleWeapon : MonoBehaviour
     Light muzzleLight;
     Material effectMaterial;
     float visibleUntil;
+    static readonly PhysicsQueryBuffer traceQuery = new PhysicsQueryBuffer();
 
     void Awake()
     {
@@ -38,15 +39,20 @@ public sealed class RifleWeapon : MonoBehaviour
     }
     public static bool Trace(Vector3 origin,Vector3 direction,float distance,Transform owner,out RaycastHit hit)
     {
-        var hits=Physics.RaycastAll(origin,direction,distance,~0,QueryTriggerInteraction.Ignore);
-        Array.Sort(hits,(a,b)=>a.distance.CompareTo(b.distance));
-        foreach(var candidate in hits)
-            if(candidate.transform!=owner && !candidate.transform.IsChildOf(owner)) {hit=candidate;return true;}
-        hit=default;return false;
+        int count=traceQuery.Raycast(origin,direction,distance);
+        float nearest=float.PositiveInfinity;
+        hit=default;
+        for(int i=0;i<count;i++)
+        {
+            var candidate=traceQuery.Hits[i];
+            if(candidate.transform==owner || candidate.transform.IsChildOf(owner) || candidate.distance>=nearest)continue;
+            nearest=candidate.distance;hit=candidate;
+        }
+        return nearest<float.PositiveInfinity;
     }
     public void Shoot(Vector3 origin, Vector3 direction)
     {
-        if(!isActiveAndEnabled || direction.sqrMagnitude<.001f)return;
+        if(GamePauseMenu.BlocksInput || !isActiveAndEnabled || direction.sqrMagnitude<.001f)return;
         direction.Normalize();
         Vector3 start=muzzle?muzzle.position:origin;
         Vector3 end=origin+direction*range;
