@@ -49,6 +49,15 @@ public sealed class BaseRoadJeepPatrol : MonoBehaviour
         }
     }
 
+    /// <summary>Continues the loop towards a waypoint, e.g. after the A* pursuit has driven back to the route.</summary>
+    public void ResumeAt(int waypointIndex, float initialSpeed = 0)
+    {
+        if (!ValidRoute()) return;
+        TargetPoint = ((waypointIndex % waypoints.Length) + waypoints.Length) % waypoints.Length;
+        CurrentSpeed = Mathf.Clamp(initialSpeed, 0, speed);
+        BlockedBy = "";
+    }
+
     bool ValidRoute()
     {
         if (waypoints == null || waypoints.Length < 3) return false;
