@@ -123,12 +123,12 @@ namespace Operation1989.EditorScripts
             kb.AssertFact(Fact.PlayerSpotted);
             kb.AssertFact(Fact.PlayerInShootingRange);
             var action1 = inference.EvaluateForwardChaining();
-            AssertTest("Forward Chaining Rule 1 (Combat Suppression)", action1 == InferredAction.EngageRangedCombat,
+            AssertTest("Forward Chaining Rule 1 (Track and Dispatch Jeep)", action1 == InferredAction.DispatchJeepPursuit,
                 $"action={action1}, activeRule={inference.ActiveRuleName}, kbNull={(kb == null)}, hasSpotted={(kb != null && kb.HasFact(Fact.PlayerSpotted))}");
 
-            // Rule 2: Flank Cover (PlayerSpotted ^ PlayerInCover)
+            // Rule 2: Search cover using genuine last-seen evidence.
             kb.ClearAllFacts();
-            kb.AssertFact(Fact.PlayerSpotted);
+            kb.AssertFact(Fact.TargetLost);
             kb.AssertFact(Fact.PlayerInCover);
             var action2 = inference.EvaluateForwardChaining();
             AssertTest("Forward Chaining Rule 2 (Cover Awareness Flank)", action2 == InferredAction.InvestigateLastKnownPos,

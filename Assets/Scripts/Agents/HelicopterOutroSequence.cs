@@ -10,7 +10,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     public Renderer parkedBlades, flyingBlades, parkedTail, flyingTail;
     public AudioClip startupClip, chatterClip;
     public AudioClip outroMusic;
-    [Range(0, 1)] public float outroMusicVolume = .28f;
+    [Range(0, 1)] public float outroMusicVolume = .5f;
     [Range(0, 1)] public float approachEngineVolume = .45f;
     [Range(0, 1)] public float cabinEngineVolume = .2f;
     [Range(0, 1)] public float chatterVolume = .75f;
@@ -244,6 +244,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     }
     void Update()
     {
+        if (GamePauseMenu.BlocksInput) return;
         Initialize();
         if (!initialized) return;
         // Music has its own audio-clock envelope and must keep updating after the visuals finish.
@@ -301,6 +302,7 @@ public sealed class HelicopterOutroSequence : MonoBehaviour
     }
     void LateUpdate()
     {
+        if (GamePauseMenu.BlocksInput) return;
         if (!Running || Finished) return;
         ApplyFlightAndCamera(Elapsed);
         if (Elapsed >= EndsAt) Finish();

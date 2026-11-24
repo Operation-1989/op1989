@@ -49,6 +49,7 @@ namespace Operation1989.AI.InferenceEngine
         public event Action<Fact, bool> OnFactChanged;
 
         private readonly HashSet<Fact> activeFacts = new HashSet<Fact>();
+        [SerializeField] private bool logFactChanges;
 
         private void Awake()
         {
@@ -71,7 +72,7 @@ namespace Operation1989.AI.InferenceEngine
             {
                 activeFacts.Add(fact);
                 OnFactChanged?.Invoke(fact, true);
-                Debug.Log($"[IS Knowledge Base] + Fact Asserted: {fact}");
+                if (logFactChanges) Debug.Log($"[IS Knowledge Base] + Fact Asserted: {fact}");
             }
         }
 
@@ -81,7 +82,7 @@ namespace Operation1989.AI.InferenceEngine
             {
                 activeFacts.Remove(fact);
                 OnFactChanged?.Invoke(fact, false);
-                Debug.Log($"[IS Knowledge Base] - Fact Retracted: {fact}");
+                if (logFactChanges) Debug.Log($"[IS Knowledge Base] - Fact Retracted: {fact}");
             }
         }
 

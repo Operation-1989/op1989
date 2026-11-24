@@ -7,6 +7,10 @@ using UnityEngine;
 public sealed class EliteGuardController : MonoBehaviour
 {
     public Transform guardPost;
+    [Tooltip("Optional fixed doorway marker. Otherwise the archive computer room door is resolved automatically.")]
+    public Transform doorwayToWatch;
+    public bool WatchesDoorway { get; private set; }
+    public Vector3 DoorwayLookPoint { get; private set; }
     public EliteCoverPoint[] coverPoints = Array.Empty<EliteCoverPoint>();
     public EliteUtility utility = new EliteUtility();
     [Min(1)] public float defensiveRadius = 16;
@@ -46,13 +50,54 @@ public sealed class EliteGuardController : MonoBehaviour
         if (!perception) return;
         post = guardPost ? guardPost.position : spawn;
         if (guardPost) facing = guardPost.rotation;
+        ResolveDoorway();
+        if (WatchesDoorway)
+        {
+            Vector3 direction = Vector3.ProjectOnPlane(DoorwayLookPoint - transform.position, Vector3.up);
+            if (direction.sqrMagnitude > .01f) transform.rotation = Quaternion.LookRotation(direction);
+        }
         perception.Forget(); movement.ResetRoute(); Action = EliteAction.Defend;
         Cover = null; nextDecision = nextShot = selectedAt = nextSearchPoint = failedUntil = 0; hadSight = wasDead = false;
         searchIndex = 0; previousHealth = health.Current;
     }
 
+    void OnEnable()
+    {
+        if (perception && health && !health.Dead) ResetGuard();
+    }
+
+    void ResolveDoorway()
+    {
+        if (WatchesDoorway && !doorwayToWatch) return;
+        WatchesDoorway = false;
+        if (doorwayToWatch)
+        {
+            DoorwayLookPoint = doorwayToWatch.position; WatchesDoorway = true; return;
+        }
+        IntelTerminal terminal = null;
+        foreach (var candidate in FindObjectsByType<IntelTerminal>())
+            if (candidate.gameObject.scene == gameObject.scene) { terminal = candidate; break; }
+        if (!terminal) return;
+        Renderer shell = null;
+        foreach (var candidate in FindObjectsByType<Renderer>())
+            if (candidate.gameObject.scene == gameObject.scene && candidate.name == "entry_3" &&
+                candidate.bounds.Contains(terminal.transform.position) &&
+                (!shell || candidate.bounds.size.sqrMagnitude < shell.bounds.size.sqrMagnitude)) shell = candidate;
+        if (!shell) return;
+        Transform room = shell.transform;
+        while (room.parent && !room.name.StartsWith("Sci-Fi_door_3_with_animation", StringComparison.OrdinalIgnoreCase)) room = room.parent;
+        foreach (var renderer in room.GetComponentsInChildren<Renderer>(true))
+            if (renderer.name == "entry_3_door")
+            {
+                // Cache the opening before the door swings: keep watching the
+                // entrance, rather than turning toward the moving door panel.
+                DoorwayLookPoint = renderer.bounds.center; WatchesDoorway = true; return;
+            }
+    }
+
     void Update()
     {
+        if (GamePauseMenu.IsPaused) return;
         if (health.Dead) { if (!wasDead) movement.Stop(); wasDead = true; return; }
         // CombatHealth.Restore retains this component; detect restoration without changing patrol health code.
         if (wasDead) ResetGuard();
@@ -103,6 +148,8 @@ public sealed class EliteGuardController : MonoBehaviour
                 break;
         }
         Vector3? threat = memory ? perception.LastAim : (Vector3?)null;
+        // A control-room sentry keeps facing the entrance even while repositioning.
+        if (WatchesDoorway) look = DoorwayLookPoint;
         movement.Tick(goal, post, defensiveRadius, threat, exposurePenalty, move, look, Time.deltaTime);
         if (movement.Failed && Action != EliteAction.Return)
         {

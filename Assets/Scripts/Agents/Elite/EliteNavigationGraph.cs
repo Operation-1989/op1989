@@ -14,6 +14,7 @@ public sealed class EliteNavigationGraph : MonoBehaviour
     public BoxCollider navigationArea;
     public bool drawGraph;
     int queryBatchDepth;
+    readonly PhysicsQueryBuffer movementQuery = new PhysicsQueryBuffer();
     readonly Dictionary<(Vector3, Vector3, Transform), bool> segmentCache = new Dictionary<(Vector3, Vector3, Transform), bool>();
     readonly Dictionary<(Vector3, Vector3, Transform), float> exposureCache = new Dictionary<(Vector3, Vector3, Transform), float>();
 
@@ -49,14 +50,26 @@ public sealed class EliteNavigationGraph : MonoBehaviour
         if (!Contains(a) || !Contains(b)) return false;
         Vector3 bottom = a + Vector3.up * (radius + .08f);
         Vector3 top = a + Vector3.up * Mathf.Max(radius + .08f, height - radius);
-        foreach (var c in Physics.OverlapCapsule(bottom, top, radius, obstacleLayers, QueryTriggerInteraction.Ignore))
+        int count = movementQuery.OverlapCapsule(bottom, top, radius, obstacleLayers);
+        for (int i = 0; i < count; i++)
+        {
+            var c = movementQuery.Colliders[i];
             if (!Ignored(c.transform, owner)) return false;
+        }
         var delta = b - a;
-        foreach (var hit in Physics.CapsuleCastAll(bottom, top, radius, delta.normalized, delta.magnitude, obstacleLayers, QueryTriggerInteraction.Ignore))
+        count = movementQuery.CapsuleCast(bottom, top, radius, delta.normalized, delta.magnitude, obstacleLayers);
+        for (int i = 0; i < count; i++)
+        {
+            var hit = movementQuery.Hits[i];
             if (!Ignored(hit.transform, owner)) return false;
+        }
         bottom += delta; top += delta;
-        foreach (var c in Physics.OverlapCapsule(bottom, top, radius, obstacleLayers, QueryTriggerInteraction.Ignore))
+        count = movementQuery.OverlapCapsule(bottom, top, radius, obstacleLayers);
+        for (int i = 0; i < count; i++)
+        {
+            var c = movementQuery.Colliders[i];
             if (!Ignored(c.transform, owner)) return false;
+        }
         return true;
     }
 

@@ -17,6 +17,7 @@ public sealed class ElitePerception : MonoBehaviour
     public float ObservedAt { get; private set; } = float.NegativeInfinity;
     public float Confidence => HasMemory ? Mathf.Clamp01(1 - (Time.time - ObservedAt) / Mathf.Max(.1f, memorySeconds)) : 0;
     public Vector3 Eye => transform.TransformPoint(eyeOffset);
+    static readonly PhysicsQueryBuffer sightQuery = new PhysicsQueryBuffer();
 
     public static bool InField(Vector3 forward, Vector3 delta, float distance, float angle)
         => delta.sqrMagnitude <= distance * distance && Vector3.Angle(forward, delta) <= angle * .5f;
@@ -24,8 +25,10 @@ public sealed class ElitePerception : MonoBehaviour
     public static bool Clear(Vector3 from, Vector3 to, Transform owner, Transform allowedTarget, int layers = ~0)
     {
         Vector3 delta = to - from;
-        foreach (var hit in Physics.RaycastAll(from, delta.normalized, delta.magnitude, layers, QueryTriggerInteraction.Ignore))
+        int count = sightQuery.Raycast(from, delta.normalized, delta.magnitude, layers);
+        for (int i = 0; i < count; i++)
         {
+            var hit = sightQuery.Hits[i];
             if (owner && (hit.transform == owner || hit.transform.IsChildOf(owner))) continue;
             if (allowedTarget && (hit.transform == allowedTarget || hit.transform.IsChildOf(allowedTarget))) continue;
             return false;

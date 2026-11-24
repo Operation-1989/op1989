@@ -42,39 +42,66 @@ namespace Operation1989.AI.Drone
         private TacticalDroneNavigationGraph navGraph;
         private DroneDamage damageHandler;
         private List<Vector3> activePath = new List<Vector3>();
+        readonly PhysicsQueryBuffer movementQuery = new PhysicsQueryBuffer();
         private int currentPathIndex = 0;
         private Vector3 currentVelocity = Vector3.zero;
         private float hoverTimer = 0f;
-        private float currentBankAngle = 0f;
+        private Transform visual;
+        private Quaternion visualRestRotation;
+        private Vector3 visualRestPosition;
 
         private void Awake()
         {
             navGraph = GetComponent<TacticalDroneNavigationGraph>();
             damageHandler = GetComponent<DroneDamage>();
-            if (rotorBlades == null || rotorBlades.Length == 0)
+            InitializeVisual();
+            if (visual)
             {
-                var bladesTrans = transform.Find("RUKO Drone Visual/Blades");
-                if (bladesTrans)
+                // Imported blade transforms have FBX axes/pivots. Spin each mesh
+                // around its physical center on a new Y-up pivot instead.
+                var rotors = new List<Transform>();
+                foreach (var renderer in visual.GetComponentsInChildren<MeshRenderer>())
                 {
-                    var list = new List<Transform>();
-                    if (bladesTrans.childCount > 0)
-                    {
-                        for (int i = 0; i < bladesTrans.childCount; i++) list.Add(bladesTrans.GetChild(i));
-                    }
-                    else
-                    {
-                        list.Add(bladesTrans);
-                    }
-                    rotorBlades = list.ToArray();
+                    if (!renderer.name.StartsWith("Blades", StringComparison.OrdinalIgnoreCase)) continue;
+                    var pivot = new GameObject(renderer.name + " Flight Rotor Pivot").transform;
+                    pivot.SetParent(visual, false);
+                    pivot.position = renderer.bounds.center;
+                    renderer.transform.SetParent(pivot, true);
+                    rotors.Add(pivot);
                 }
+                if (rotors.Count > 0) rotorBlades = rotors.ToArray();
+            }
+        }
+
+        private void OnEnable()
+        {
+            if (Application.isPlaying && (!damageHandler || !damageHandler.Destroyed)) InitializeVisual();
+        }
+
+        private void InitializeVisual()
+        {
+            visual = transform.Find("RUKO Drone Visual");
+            if (visual)
+            {
+                // Unity already converts this FBX into Y-up. A second -90 degree
+                // correction turns the whole airframe vertically on its nose.
+                visualRestRotation = Quaternion.identity;
+                visual.localRotation = visualRestRotation;
+                visualRestPosition = visual.localPosition;
             }
         }
 
         public void SetPath(List<Vector3> path)
         {
-            activePath = path != null ? new List<Vector3>(path) : new List<Vector3>();
+            if (!ReferenceEquals(activePath, path))
+            {
+                activePath.Clear();
+                if (path != null) activePath.AddRange(path);
+            }
             currentPathIndex = 0;
-            IsMoving = activePath.Count > 0;
+            while (currentPathIndex < activePath.Count && Vector3.Distance(transform.position, activePath[currentPathIndex]) < .15f)
+                currentPathIndex++;
+            IsMoving = currentPathIndex < activePath.Count;
         }
 
         public void ClearPath()
@@ -82,10 +109,12 @@ namespace Operation1989.AI.Drone
             activePath.Clear();
             currentPathIndex = 0;
             IsMoving = false;
+            currentVelocity = Vector3.zero;
         }
 
         private void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             if (damageHandler && damageHandler.Destroyed)
             {
                 IsMoving = false;
@@ -94,7 +123,7 @@ namespace Operation1989.AI.Drone
 
             SpinRotors();
             TraverseActivePath();
-            ApplyHoverBobbing();
+            ApplyVisualPose();
         }
 
         private void SpinRotors()
@@ -124,33 +153,19 @@ namespace Operation1989.AI.Drone
             Vector3 delta = targetPoint - transform.position;
             float dist = delta.magnitude;
 
-            // Forward whisker collision check - casts ahead of drone, filtering out self
-            if (dist > 3.0f)
+            // Test every physical obstacle, not only props with a particular name/tag.
+            if (dist > .05f)
             {
-                Vector3 whiskerOrigin = transform.position + delta.normalized * 2.0f;
-                var hits = Physics.SphereCastAll(whiskerOrigin, 0.4f, delta.normalized, whiskerDistance, obstacleLayers, QueryTriggerInteraction.Ignore);
-                foreach (var h in hits)
+                int count = movementQuery.SphereCast(transform.position, .8f, delta.normalized, Mathf.Min(dist, whiskerDistance));
+                for (int i = 0; i < count; i++)
                 {
-                    if (h.transform == transform || h.transform.IsChildOf(transform)) continue;
-                    if (h.collider != null && h.collider.isTrigger) continue;
-                    if (h.transform.name.IndexOf("Drone", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-
-                    // Legitimate dynamic obstacle detected (barricade or dynamic barrier)
-                    bool isDynamicObstacle = (h.collider.GetComponentInParent<PushableBarricade>() != null) ||
-                                             (h.collider.name.IndexOf("Barrier", StringComparison.OrdinalIgnoreCase) >= 0) ||
-                                             (h.collider.name.IndexOf("Obstacle", StringComparison.OrdinalIgnoreCase) >= 0) ||
-                                             h.collider.CompareTag("Obstacle");
-
-                    if (isDynamicObstacle)
-                    {
-                        Debug.LogWarning($"[Drone Movement] Dynamic obstacle detected ahead ({h.collider.name})! Triggering A* re-plan.");
-                        OnDynamicObstacleDetected?.Invoke();
-                        return;
-                    }
+                    var hit = movementQuery.Hits[i];
+                    if (hit.transform.IsChildOf(transform)) continue;
+                    ClearPath(); OnDynamicObstacleDetected?.Invoke(); return;
                 }
             }
 
-            if (dist <= waypointArrivalDistance)
+            if (dist <= Mathf.Min(waypointArrivalDistance, .4f))
             {
                 currentPathIndex++;
                 if (currentPathIndex >= activePath.Count)
@@ -163,30 +178,47 @@ namespace Operation1989.AI.Drone
             }
 
             Vector3 targetDir = delta.normalized;
-            Vector3 desiredVelocity = targetDir * cruiseSpeed;
-            currentVelocity = Vector3.MoveTowards(currentVelocity, desiredVelocity, cruiseSpeed * 2f * Time.deltaTime);
-            transform.position += currentVelocity * Time.deltaTime;
-
-            // Smooth rotation towards target direction
-            if (targetDir.sqrMagnitude > 0.001f)
+            // Brake into each corner and the final hover position. Replanning retains velocity.
+            float acceleration = cruiseSpeed;
+            float targetSpeed = Mathf.Min(cruiseSpeed, Mathf.Sqrt(2f * acceleration * delta.magnitude));
+            Vector3 desiredVelocity = targetDir * targetSpeed;
+            currentVelocity = Vector3.MoveTowards(currentVelocity, desiredVelocity, acceleration * Time.deltaTime);
+            Vector3 step = Vector3.ClampMagnitude(currentVelocity * Time.deltaTime, delta.magnitude);
+            int stepHits = movementQuery.SphereCast(transform.position, .8f, step.normalized, step.magnitude);
+            for (int i = 0; i < stepHits; i++)
             {
-                Quaternion targetRot = Quaternion.LookRotation(targetDir, Vector3.up);
-                transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRot, turnSpeed * Time.deltaTime);
-
-                // Compute banking angle into turn (roll)
-                float angleDelta = Vector3.SignedAngle(transform.forward, targetDir, Vector3.up);
-                float desiredBank = Mathf.Clamp(-angleDelta * 0.8f, -maxBankAngle, maxBankAngle);
-                currentBankAngle = Mathf.Lerp(currentBankAngle, desiredBank, Time.deltaTime * 5f);
-                transform.rotation *= Quaternion.Euler(0, 0, currentBankAngle);
+                var hit = movementQuery.Hits[i];
+                if (hit.transform.IsChildOf(transform)) continue;
+                ClearPath(); OnDynamicObstacleDetected?.Invoke(); return;
             }
+            transform.position += step;
+            currentVelocity = Time.deltaTime > 0 ? step / Time.deltaTime : Vector3.zero;
+
         }
 
-        private void ApplyHoverBobbing()
+        public static Quaternion LevelFacing(Quaternion current, Vector3 velocity, float degrees)
         {
-            if (!enableHoverBobbing || IsMoving) return;
+            Vector3 horizontal = Vector3.ProjectOnPlane(velocity, Vector3.up);
+            Quaternion level = Quaternion.Euler(0, current.eulerAngles.y, 0);
+            return horizontal.sqrMagnitude < .01f ? level :
+                Quaternion.RotateTowards(level, Quaternion.LookRotation(horizontal, Vector3.up), degrees);
+        }
+
+        private void ApplyVisualPose()
+        {
+            // The navigation root stays upright, including during vertical climbs/descents.
+            transform.rotation = LevelFacing(transform.rotation, currentVelocity, turnSpeed * Time.deltaTime);
+            if (!visual) return;
+            Vector3 horizontal = Vector3.ProjectOnPlane(currentVelocity, Vector3.up);
+            float turn = horizontal.sqrMagnitude > .1f ? Vector3.SignedAngle(transform.forward, horizontal, Vector3.up) : 0;
+            float roll = Mathf.Clamp(-turn * .12f, -Mathf.Min(8, maxBankAngle), Mathf.Min(8, maxBankAngle));
+            float pitch = IsMoving ? Mathf.Min(5, horizontal.magnitude * .6f) : 0;
+            Quaternion pose = Quaternion.Euler(pitch, 0, roll) * visualRestRotation;
+            visual.localRotation = Quaternion.RotateTowards(visual.localRotation, pose, 30f * Time.deltaTime);
             hoverTimer += Time.deltaTime * bobbingSpeed;
-            float bobOffset = Mathf.Sin(hoverTimer) * bobbingAmplitude * Time.deltaTime;
-            transform.position += new Vector3(0, bobOffset, 0);
+            float bobOffset = enableHoverBobbing && !IsMoving ? Mathf.Sin(hoverTimer) * Mathf.Min(.08f, bobbingAmplitude) : 0;
+            visual.localPosition = Vector3.Lerp(visual.localPosition, visualRestPosition + Vector3.up * bobOffset,
+                1f - Mathf.Exp(-5f * Time.deltaTime));
         }
 
         private void OnDrawGizmosSelected()

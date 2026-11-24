@@ -12,20 +12,22 @@ namespace Operation1989.AI.Jeep
     /// nothing blocks the line of sight (roofs, walls), he is not hiding in the supply truck,
     /// and the intro truck has handed control to the player.
     /// </summary>
+    [DefaultExecutionOrder(100)]
     [DisallowMultipleComponent]
     public sealed class DronePlayerSurveillance : MonoBehaviour
     {
         [Tooltip("Horizontal radius of the area under the drone it can observe.")]
         [Min(1)] public float detectionRadius = 28f;
-        [Min(.05f)] public float scanInterval = .25f;
+        [Min(.05f)] public float scanInterval = .1f;
         [Tooltip("How often the position message is repeated while the player stays visible.")]
-        [Min(.1f)] public float messageInterval = 1f;
+        [Min(.1f)] public float messageInterval = .2f;
         public LayerMask lineOfSightMask = ~0;
         [Tooltip("Do not report the player while the intro truck still carries him.")]
         public bool waitForIntroHandOff = true;
 
         public bool PlayerVisible { get; private set; }
 
+        Operation1989.AI.Drone.TacticalDronePerception perception;
         Transform player;
         CombatHealth playerHealth;
         DroneDamage damage;
@@ -37,11 +39,13 @@ namespace Operation1989.AI.Jeep
         void Start()
         {
             damage = GetComponent<DroneDamage>();
+            perception = GetComponent<Operation1989.AI.Drone.TacticalDronePerception>();
             intro = FindAnyObjectByType<IntroTruckSequence>();
         }
 
-        void Update()
+        void LateUpdate()
         {
+            if (GamePauseMenu.IsPaused) return;
             scanTimer += Time.deltaTime;
             if (scanTimer < scanInterval) return;
             scanTimer = 0;
@@ -68,8 +72,13 @@ namespace Operation1989.AI.Jeep
         bool CanSeePlayer()
         {
             if (damage && damage.Destroyed) return false;
-            if (waitForIntroHandOff && intro && !intro.HandedOff) return false;
+            if (waitForIntroHandOff && intro && (!intro.HandedOff || !intro.Entered)) return false;
             if (SupplyTruckStealthZone.IsPlayerConcealed) return false;
+            if (perception)
+            {
+                player = perception.TargetPlayer;
+                return perception.isActiveAndEnabled && perception.CanSeePlayer && player;
+            }
             if (!player)
             {
                 var fp = FindAnyObjectByType<FirstPersonController>();
@@ -97,6 +106,12 @@ namespace Operation1989.AI.Jeep
                 if (hits[i].distance < nearest) { nearest = hits[i].distance; first = hits[i].transform; }
             }
             return first == null || first.IsChildOf(player) || player.IsChildOf(first);
+        }
+
+        void OnDisable()
+        {
+            if (PlayerVisible && alerts) alerts.ClearAlert();
+            PlayerVisible = false;
         }
 
         void OnDrawGizmosSelected()

@@ -24,7 +24,11 @@ public sealed class CombatHealth : MonoBehaviour
     readonly CombatHud hud = new CombatHud();
     Vector3 spawn;
     Quaternion rotation;
-    void Awake(){Current=maximumHealth;spawn=transform.position;rotation=transform.rotation;}
+    void Awake()
+    {
+        if(!isPlayer && GetComponent<BarricadePatrolSoldier>())maximumHealth=BarricadePatrolSoldier.PatrolMaximumHealth;
+        Current=maximumHealth;spawn=transform.position;rotation=transform.rotation;
+    }
     public void TakeDamage(float amount)
     {
         if(Dead || CinematicProtection || amount<=0)return;
@@ -32,7 +36,7 @@ public sealed class CombatHealth : MonoBehaviour
         lastDamagedAt=Time.time;regenerationStartHealth=Current;
         var guard=GetComponent<BarricadePatrolSoldier>();if(guard)guard.Alert();
         if(!Dead)return;
-        if(isPlayer) {FindAnyObjectByType<IntelTheftMission>()?.ResetForCheckpoint();respawnAt=Time.unscaledTime+respawnDelay;GetComponent<FirstPersonController>().enabled=false;Cursor.lockState=CursorLockMode.None;Cursor.visible=true;}
+        if(isPlayer) {FindAnyObjectByType<IntelTheftMission>()?.ResetForCheckpoint();respawnAt=GamePauseMenu.UnscaledTime+respawnDelay;GetComponent<FirstPersonController>().enabled=false;Cursor.lockState=CursorLockMode.None;Cursor.visible=true;}
         else
         {
             if(guard)guard.enabled=false;
@@ -57,10 +61,11 @@ public sealed class CombatHealth : MonoBehaviour
     }
     void Update()
     {
+        if(GamePauseMenu.BlocksInput)return;
         if(!isPlayer)return;
         if(Dead)
         {
-            if(Time.unscaledTime>=respawnAt || (Keyboard.current!=null && Keyboard.current.rKey.wasPressedThisFrame))Respawn();
+            if(GamePauseMenu.UnscaledTime>=respawnAt || (Keyboard.current!=null && Keyboard.current.rKey.wasPressedThisFrame))Respawn();
             return;
         }
         if(IsRegenerating)
@@ -91,10 +96,11 @@ public sealed class CombatHealth : MonoBehaviour
     }
     void OnGUI()
     {
+        if(GamePauseMenu.IsPaused)return;
         if(!isPlayer)return;
         if(!Dead && !GetComponent<FirstPersonController>().isActiveAndEnabled)return;
         if(Time.time<hurtUntil) {var color=GUI.color;GUI.color=new Color(1,.1f,.05f,.16f);GUI.DrawTexture(new Rect(0,0,Screen.width,Screen.height),Texture2D.whiteTexture);GUI.color=color;}
-        hud.Draw(this,Mathf.Max(0,respawnAt-Time.unscaledTime));
+        hud.Draw(this,Mathf.Max(0,respawnAt-GamePauseMenu.UnscaledTime));
     }
     void OnDestroy(){hud.Dispose();}
 }

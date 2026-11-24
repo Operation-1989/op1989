@@ -35,6 +35,7 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             EvaluateForwardChaining();
         }
 
@@ -58,26 +59,26 @@ namespace Operation1989.AI.Drone
             if (!perception) perception = GetComponent<TacticalDronePerception>();
 
             // =========================================================================
-            // RULE 1: Direct Combat Engagement
-            // PREMISE: PlayerSpotted ^ !PlayerInCover ^ PlayerInShootingRange
-            // CONCLUSION: InferredAction.EngageRangedCombat
+            // RULE 1: Track a visible target and dispatch the jeep
+            // PREMISE: PlayerSpotted ^ !PlayerInCover
+            // CONCLUSION: InferredAction.DispatchJeepPursuit
             // =========================================================================
-            if (kb.HasFact(Fact.PlayerSpotted) && !kb.HasFact(Fact.PlayerInCover) && kb.HasFact(Fact.PlayerInShootingRange))
+            if (kb.HasFact(Fact.PlayerSpotted) && !kb.HasFact(Fact.PlayerInCover))
             {
-                newAction = InferredAction.EngageRangedCombat;
-                newRule = "Rule 1: Direct Combat Engagement";
-                explanation = "Player is visually confirmed in open ground within lethal weapons range. Engaging suppressive fire.";
+                newAction = InferredAction.DispatchJeepPursuit;
+                newRule = "Rule 1: Track Player and Dispatch Jeep";
+                explanation = "Player visually confirmed. Maintain surveillance and report current coordinates to the jeep.";
             }
             // =========================================================================
             // RULE 2: Flank / Reposition (Cover Awareness)
-            // PREMISE: PlayerSpotted ^ PlayerInCover
+            // PREMISE: PlayerInCover ^ (TargetLost OR GunshotHeard)
             // CONCLUSION: InferredAction.InvestigateLastKnownPos (Tactical Reposition)
             // =========================================================================
-            else if (kb.HasFact(Fact.PlayerSpotted) && kb.HasFact(Fact.PlayerInCover))
+            else if (kb.HasFact(Fact.PlayerInCover) && (kb.HasFact(Fact.TargetLost) || kb.HasFact(Fact.GunshotHeard)))
             {
                 newAction = InferredAction.InvestigateLastKnownPos;
-                newRule = "Rule 2: Flank Cover / Reposition";
-                explanation = "Player is utilizing physical barricades/cover. Repositioning flight altitude and angle to re-establish line-of-sight.";
+                newRule = "Rule 2: Search Last Seen Cover";
+                explanation = "Cover blocks sight. Search the last observed location without reporting unseen player coordinates.";
             }
             // =========================================================================
             // RULE 3: Acoustic Gunfire Intercept
@@ -95,7 +96,7 @@ namespace Operation1989.AI.Drone
             // PREMISE: TargetLost ^ (MemoryConfidence > 0)
             // CONCLUSION: InferredAction.InvestigateLastKnownPos
             // =========================================================================
-            else if (kb.HasFact(Fact.TargetLost) && (perception == null || perception.MemoryConfidence > 0.05f))
+            else if (kb.HasFact(Fact.TargetLost))
             {
                 newAction = InferredAction.InvestigateLastKnownPos;
                 newRule = "Rule 4: Dynamic Lost Target Search";

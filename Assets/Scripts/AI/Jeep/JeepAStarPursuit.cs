@@ -2,507 +2,511 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Operation1989.Interaction.AI;
+using Operation1989.AI.Drone;
 
 namespace Operation1989.AI.Jeep
 {
-    /// <summary>
-    /// Intelligent Systems – drone-guided A* pursuit for the patrol jeep.
-    ///
-    /// Agent loop (Sense → Think → Act):
-    ///  • SENSE  – the surveillance drone broadcasts the player's position (DroneAlertSystem).
-    ///  • THINK  – A* on <see cref="JeepNavigationGrid"/> plans the cheapest collision-free route,
-    ///             and re-plans when the reported position moves or the road is blocked.
-    ///  • ACT    – the jeep leaves its perimeter patrol, drives the route with speed control for
-    ///             corners and braking, stops short of the soldier, searches the last known
-    ///             position when the drone loses the player, then drives back to its patrol road.
-    ///
-    /// States: Patrol → Pursuit → Search → Return → Patrol.
-    /// </summary>
+    /// <summary>One obstacle-aware driver owns patrol, interception, search and return.</summary>
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(JeepNavigationGrid), typeof(Rigidbody))]
+    [RequireComponent(typeof(JeepNavigationGrid), typeof(Rigidbody), typeof(JeepDamage))]
     public sealed class JeepAStarPursuit : MonoBehaviour
     {
-        public enum State { Patrol, Pursuit, Search, Return }
-
-        [Header("Driving")]
-        [Min(.5f)] public float pursuitSpeed = 10f;
-        [Min(.5f)] public float returnSpeed = 6f;
-        [Min(.1f)] public float acceleration = 4f;
-        [Min(.1f)] public float braking = 7f;
-        [Min(10)] public float turnSpeed = 110f;
-        [Tooltip("A path point counts as reached within this distance.")]
-        [Min(.2f)] public float waypointRadius = 1.6f;
-        [Tooltip("Speed factor in a 90° corner.")]
+        public enum State { Patrol, Pursuit, Search, Return, Disabled }
+        [Header("Independent visual detection")]
+        public float sightRange = 48f;
+        [Range(30, 180)] public float sightAngle = 130f;
+        public bool HasDirectContact { get; private set; }
+        public bool HasContact => DroneHasPlayer || HasDirectContact;
+        public float pursuitSpeed = 10f, returnSpeed = 6f, acceleration = 4f, braking = 7f, turnSpeed = 110f;
+        public float waypointRadius = .65f;
         [Range(.1f, 1)] public float cornerSlowdown = .35f;
-        [Tooltip("The jeep stops this far from the reported player position.")]
-        [Min(1)] public float stopDistanceFromPlayer = 7f;
-
-        [Header("Collision safety")]
-        [Tooltip("Extra look-ahead distance of the forward box cast, on top of braking distance.")]
-        [Min(.1f)] public float obstacleLookAhead = 1.2f;
-        [Tooltip("When something blocks the road this long, it is added to the map and A* re-plans.")]
-        [Min(.1f)] public float blockedReplanSeconds = 1f;
-        [Min(1)] public float temporaryObstacleSeconds = 20f;
-
-        [Header("Re-planning")]
-        [Tooltip("Re-plan when the drone reports the player this far from the planned goal.")]
-        [Min(.5f)] public float replanDistance = 4f;
-        [Min(.1f)] public float minReplanInterval = 1f;
-
-        [Header("Search")]
-        [Min(0)] public float searchSeconds = 8f;
-        [Min(1)] public float maxGoalSearchRadius = 30f;
-
-        [Header("Debug")]
-        public bool showStatusOverlay = true;
-        public bool logDecisions = true;
-
+        [Tooltip("Minimum distance to the player when choosing an interception point.")]
+        public float stopDistanceFromPlayer = 6f;
+        public float obstacleLookAhead = 1.2f, blockedReplanSeconds = 1f, temporaryObstacleSeconds = 3f;
+        public float replanDistance = 1.25f, minReplanInterval = .35f;
+        public float searchSeconds = 8f, maxGoalSearchRadius = 20f;
+        [Tooltip("Entrance the jeep should prevent the player from reaching. Resolved automatically in army base.")]
+        public Transform mainBuildingEntrance;
+        public bool showStatusOverlay, logDecisions;
         public State CurrentState { get; private set; } = State.Patrol;
         public float CurrentSpeed { get; private set; }
         public Vector3 TargetPosition { get; private set; }
+        public Vector3 InterceptionPosition { get; private set; }
         public bool DroneHasPlayer { get; private set; }
         public string BlockedBy { get; private set; } = "";
         public int ReplanCount { get; private set; }
         public IReadOnlyList<Vector3> Path => path;
-        public bool IsDriving => CurrentState != State.Patrol;
+        public bool IsDriving => ready && isActiveAndEnabled;
 
         BaseRoadJeepPatrol patrol;
         JeepNavigationGrid grid;
         Rigidbody body;
         BoxCollider footprint;
-        DroneAlertSystem subscribedAlerts;
-        Transform player;
-
+        DroneAlertSystem alerts;
+        JeepDamage damage;
+        FirstPersonController player;
+        IntroTruckSequence intro;
+        Vector3 droneReportPosition;
+        float lastDroneReportTime = -999f, nextSightScan;
         readonly List<Vector3> path = new List<Vector3>();
-        int pathIndex;
-        Vector3 plannedGoal;
-        float lastPlanTime = -999f;
-        float blockedTimer;
-        float searchTimer;
-        int returnWaypoint = -1;
-        bool pendingReplan;
+        int pathIndex, patrolIndex;
+        Vector3 plannedGoal, observedVelocity, lastPosition;
+        float lastPlanTime = -999f, lastReportTime = -999f, blockedTimer, searchTimer, unreachableSince = -1;
+        bool ready, pendingReplan;
+        readonly PhysicsQueryBuffer physicsQuery = new PhysicsQueryBuffer();
+        static readonly float[] sightHeights = { 0f, .55f, -.25f };
 
         void Awake()
         {
-            patrol = GetComponent<BaseRoadJeepPatrol>();
-            grid = GetComponent<JeepNavigationGrid>();
-            body = GetComponent<Rigidbody>();
-            footprint = GetComponent<BoxCollider>();
+            patrol = GetComponent<BaseRoadJeepPatrol>(); grid = GetComponent<JeepNavigationGrid>();
+            body = GetComponent<Rigidbody>(); footprint = GetComponent<BoxCollider>();
+            damage = GetComponent<JeepDamage>();
         }
-
         void Start()
         {
+            patrolIndex = patrol ? patrol.TargetPoint : 0;
+            CurrentSpeed = patrol ? patrol.CurrentSpeed : 0;
+            if (patrol) patrol.enabled = false;
+            // MovePosition/MoveRotation provide a single deterministic owner of the vehicle.
+            body.isKinematic = true; body.useGravity = false;
+            if (!mainBuildingEntrance)
+            {
+                var door = GameObject.Find("Main Building Entrance Checkpoint");
+                if (!door) door = GameObject.Find("building_1");
+                if (door) mainBuildingEntrance = door.transform;
+            }
             ConfigureGrid(grid, patrol, footprint, transform);
-            grid.Build(transform, transform.position.y, PatrolBounds(patrol));
+            grid.Build(transform, body.position.y, PatrolBounds(patrol));
+            lastPosition = body.position;
+            ready = true;
+            Subscribe();
         }
-
-        /// <summary>Shared by runtime and the editor validation tool.</summary>
         public static void ConfigureGrid(JeepNavigationGrid grid, BaseRoadJeepPatrol patrol, BoxCollider footprint, Transform jeep)
         {
-            if ((grid.roadSurfaces == null || grid.roadSurfaces.Length == 0) && patrol && patrol.groundSurfaces != null)
-                grid.roadSurfaces = patrol.groundSurfaces;
+            if ((grid.roadSurfaces == null || grid.roadSurfaces.Length == 0) && patrol) grid.roadSurfaces = patrol.groundSurfaces;
             if (footprint)
-                grid.vehicleHalfWidth = Mathf.Max(.5f, footprint.size.x * Mathf.Abs(jeep.lossyScale.x) * .5f);
+            {
+                Vector3 size = Vector3.Scale(footprint.size, jeep.lossyScale);
+                // A circumscribed footprint remains safe while turning, including the rear corners.
+                grid.vehicleHalfWidth = Mathf.Max(.5f, new Vector2(size.x, size.z).magnitude * .5f);
+            }
         }
-
         public static Bounds? PatrolBounds(BaseRoadJeepPatrol patrol)
         {
-            if (!patrol || patrol.waypoints == null) return null;
-            Bounds? b = null;
-            foreach (var w in patrol.waypoints)
-            {
-                if (!w) continue;
-                if (b.HasValue) { var v = b.Value; v.Encapsulate(w.position); b = v; }
-                else b = new Bounds(w.position, Vector3.one);
-            }
-            return b;
-        }
-
-        // =====================================================================================
-        // SENSE – drone messages
-        // =====================================================================================
-
-        void OnDisable() => Unsubscribe();
-
-        void Update()
-        {
-            // The alert system may be created after this jeep (scene bootstrap), so keep checking.
-            if (subscribedAlerts != DroneAlertSystem.Instance)
-            {
-                Unsubscribe();
-                subscribedAlerts = DroneAlertSystem.Instance;
-                if (subscribedAlerts)
+            Bounds? bounds = null;
+            if (patrol && patrol.waypoints != null)
+                foreach (var point in patrol.waypoints)
                 {
-                    subscribedAlerts.OnPlayerSpottedByDrone += HandlePlayerSpotted;
-                    subscribedAlerts.OnPlayerLostByDrone += HandlePlayerLost;
+                    if (!point) continue;
+                    var value = bounds ?? new Bounds(point.position, Vector3.zero);
+                    value.Encapsulate(point.position); bounds = value;
                 }
-            }
+            return bounds;
         }
-
+        void Subscribe()
+        {
+            if (alerts == DroneAlertSystem.Instance) return;
+            Unsubscribe(); alerts = DroneAlertSystem.Instance;
+            if (!alerts) { HandlePlayerLost(); return; }
+            alerts.OnPlayerSpottedByDrone += HandlePlayerSpotted;
+            alerts.OnPlayerLostByDrone += HandlePlayerLost;
+            if (alerts.IsPlayerSpotted) HandlePlayerSpotted(alerts.LastSpottedPosition);
+        }
         void Unsubscribe()
         {
-            if (!subscribedAlerts) { subscribedAlerts = null; return; }
-            subscribedAlerts.OnPlayerSpottedByDrone -= HandlePlayerSpotted;
-            subscribedAlerts.OnPlayerLostByDrone -= HandlePlayerLost;
-            subscribedAlerts = null;
+            if (alerts)
+            {
+                alerts.OnPlayerSpottedByDrone -= HandlePlayerSpotted;
+                alerts.OnPlayerLostByDrone -= HandlePlayerLost;
+            }
+            alerts = null;
         }
-
-        /// <summary>Drone message: "player seen at this position".</summary>
+        void Update()
+        {
+            if (GamePauseMenu.IsPaused) return;
+            Subscribe();
+            if (DroneHasPlayer && Time.time - lastDroneReportTime > DroneAlertSystem.ContactTimeout) HandlePlayerLost();
+            if (damage && damage.Disabled) { HasDirectContact = false; return; }
+            if (Time.time < nextSightScan) return;
+            nextSightScan = Time.time + .15f;
+            if (!player) player = Object.FindAnyObjectByType<FirstPersonController>();
+            if (!intro) intro = Object.FindAnyObjectByType<IntroTruckSequence>();
+            var health = player ? player.GetComponent<CombatHealth>() : null;
+            bool canObserve = player && player.isActiveAndEnabled && (!health || !health.Dead) &&
+                (!intro || (intro.HandedOff && intro.Entered));
+            RefreshVisualContact(canObserve ? player.transform : null);
+        }
+        public bool RefreshVisualContact(Transform target)
+        {
+            if (damage && damage.Disabled) { HasDirectContact = false; return false; }
+            HasDirectContact = HasDirectSight(target);
+            if (HasDirectContact) UpdateContact(target.position);
+            else if (DroneHasPlayer) UpdateContact(droneReportPosition);
+            else observedVelocity = Vector3.zero;
+            return HasDirectContact;
+        }
+        public bool HasDirectSight(Transform target)
+        {
+            if (!target) return false;
+            Vector3 origin = transform.position + Vector3.up * 1.8f;
+            Bounds targetBounds = SightBounds(target);
+            Vector3 delta = targetBounds.center - origin;
+            if (delta.magnitude > sightRange || delta.sqrMagnitude < .001f) return false;
+            // Once alerted, the driver watches around the last contact instead of
+            // forgetting a visible player when the jeep parks broadside to block.
+            bool watchingContact = Time.time - lastReportTime <= searchSeconds &&
+                (CurrentState == State.Pursuit || CurrentState == State.Search);
+            if (!watchingContact && delta.magnitude > 8f &&
+                Vector3.Angle(Flat(transform.forward), Flat(delta)) > sightAngle * .5f) return false;
+            // Sample the torso and shoulders so a little low cover does not hide
+            // the entire player. Every accepted sample still needs clear sight.
+            foreach (float height in sightHeights)
+            {
+                Vector3 aim = targetBounds.center + Vector3.up * (targetBounds.extents.y * height);
+                Vector3 ray = aim - origin;
+                if (RifleWeapon.Trace(origin, ray.normalized, ray.magnitude + .05f, transform, out var hit) &&
+                    (hit.transform == target || hit.transform.IsChildOf(target))) return true;
+            }
+            return false;
+        }
+        static Bounds SightBounds(Transform target)
+        {
+            var character = target.GetComponent<CharacterController>();
+            if (character)
+            {
+                // Use its actual center: the army-base player root is mid-body,
+                // rather than at the feet as the previous fixed offset assumed.
+                Vector3 scale = target.lossyScale;
+                return new Bounds(target.TransformPoint(character.center), new Vector3(
+                    character.radius * 2 * Mathf.Abs(scale.x), character.height * Mathf.Abs(scale.y),
+                    character.radius * 2 * Mathf.Abs(scale.z)));
+            }
+            var collider = target.GetComponent<Collider>();
+            if (!collider) collider = target.GetComponentInChildren<Collider>();
+            return collider ? collider.bounds : new Bounds(target.position, Vector3.one);
+        }
+        void OnDisable()
+        {
+            Unsubscribe();
+            if (ready && patrol && gameObject.activeInHierarchy) patrol.enabled = true;
+        }
         public void HandlePlayerSpotted(Vector3 position)
         {
-            TargetPosition = position;
-            DroneHasPlayer = true;
-            if (CurrentState != State.Pursuit)
-            {
-                EnterPursuit();
-                return;
-            }
-            // Only re-plan when the target really moved – keeps CPU use low and driving stable.
-            if (Flat(position - plannedGoal).magnitude > replanDistance) pendingReplan = true;
+            droneReportPosition = position; lastDroneReportTime = Time.time; DroneHasPlayer = true;
+            if (!HasDirectContact) UpdateContact(position);
         }
-
-        /// <summary>Drone message: "player lost". The jeep continues to the last known position.</summary>
-        public void HandlePlayerLost()
+        void UpdateContact(Vector3 position)
         {
-            DroneHasPlayer = false;
-            if (logDecisions && CurrentState == State.Pursuit)
-                Debug.Log($"[Jeep A*] Drone lost the player. Driving on to last known position {TargetPosition}.");
+            if (damage && damage.Disabled) return;
+            float elapsed = Time.time - lastReportTime;
+            observedVelocity = elapsed > .05f && elapsed < DroneAlertSystem.ContactTimeout
+                ? Vector3.ClampMagnitude(Flat(position - TargetPosition) / elapsed, 8f) : Vector3.zero;
+            TargetPosition = position; lastReportTime = Time.time;
+            InterceptionPosition = Intercept(position);
+            bool changedState = CurrentState != State.Pursuit;
+            CurrentState = State.Pursuit; searchTimer = 0;
+            pendingReplan |= changedState || Flat(InterceptionPosition - plannedGoal).magnitude >= replanDistance;
+            if (ready && changedState) Plan(InterceptionPosition, maxGoalSearchRadius);
         }
-
-        // =====================================================================================
-        // THINK – state transitions and A* planning
-        // =====================================================================================
-
-        void EnterPursuit()
+        public void HandlePlayerLost() { DroneHasPlayer = false; if (!HasDirectContact) observedVelocity = Vector3.zero; }
+        Vector3 Intercept(Vector3 report)
         {
-            if (patrol && patrol.enabled)
-            {
-                CurrentSpeed = patrol.CurrentSpeed; // keep moving smoothly out of the patrol
-                patrol.enabled = false;
-            }
-            CurrentState = State.Pursuit;
-            searchTimer = 0;
-            if (logDecisions) Debug.Log($"[Jeep A*] Drone report received – pursuing player at {TargetPosition}.");
-            Plan(TargetPosition, maxGoalSearchRadius);
+            if (!mainBuildingEntrance) return report;
+            Vector3 toDoor = Flat(mainBuildingEntrance.position - report);
+            float distance = toDoor.magnitude;
+            if (distance < .1f) return report;
+            float travelTime = Flat(report - body.position).magnitude / Mathf.Max(1, pursuitSpeed);
+            float approachSpeed = Mathf.Max(0, Vector3.Dot(observedVelocity, toDoor.normalized));
+            float lead = Mathf.Clamp(stopDistanceFromPlayer + approachSpeed * travelTime * .5f, 3f, 12f);
+            return report + toDoor.normalized * Mathf.Min(lead, distance * .75f);
         }
-
-        bool Plan(Vector3 goal, float goalRadius)
+        bool Plan(Vector3 goal, float radius)
         {
-            lastPlanTime = Time.time;
-            pendingReplan = false;
-            plannedGoal = goal;
-            if (!grid.IsBuilt) return false;
-            if (!grid.FindPath(body.position, goal, path, goalRadius))
+            lastPlanTime = Time.time; plannedGoal = goal; pendingReplan = false;
+            bool found = grid.IsBuilt && grid.FindPath(body.position, goal, path, radius, CurrentState == State.Pursuit);
+            if (!found)
             {
-                path.Clear();
-                if (logDecisions) Debug.LogWarning($"[Jeep A*] No safe route to {goal} (expanded {grid.LastExpandedNodes} nodes). Waiting for a new report.");
-                return false;
+                path.Clear(); if (unreachableSince < 0) unreachableSince = Time.time; return false;
             }
+            unreachableSince = -1;
+            // The first point is the real vehicle position. Never substitute an unchecked final point.
             pathIndex = path.Count > 1 ? 1 : 0;
-            ReplanCount++;
-            if (logDecisions)
-                Debug.Log($"[Jeep A*] Route planned: {grid.LastRawPath.Count} grid cells → {path.Count} waypoints, " +
-                          $"cost {grid.LastPathCost:F1}, expanded {grid.LastExpandedNodes} nodes in {grid.LastSearchMilliseconds:F2} ms.");
-            return true;
+            ReplanCount++; return true;
         }
-
         void FixedUpdate()
         {
-            if (!grid.IsBuilt) return;
+            if (!ready || !grid.IsBuilt) return;
+            if (damage && damage.Disabled)
+            {
+                CurrentState = State.Disabled; CurrentSpeed = 0; path.Clear();
+                if (patrol) patrol.ReportNavigation(0, 0, patrolIndex);
+                lastPosition = body.position;
+                return;
+            }
+            if (CurrentState == State.Disabled)
+            {
+                CurrentSpeed = 0; nextSightScan = 0;
+                if (HasContact) UpdateContact(HasDirectContact && player ? player.transform.position : droneReportPosition);
+                else BeginReturn();
+            }
             float dt = Time.fixedDeltaTime;
+            Vector3 previous = body.position;
             switch (CurrentState)
             {
                 case State.Patrol:
-                    return;
-
+                    Patrol(dt); break;
                 case State.Pursuit:
-                    // Re-plan when the drone reports a new position, or retry when no route was found.
+                    if (!HasContact && path.Count == 0 && unreachableSince >= 0 && Time.time - unreachableSince >= searchSeconds)
+                    { BeginReturn(); break; }
                     if ((pendingReplan || path.Count == 0) && Time.time - lastPlanTime >= minReplanInterval)
-                        Plan(TargetPosition, maxGoalSearchRadius);
-                    bool arrived = Drive(dt, pursuitSpeed, TargetPosition, stopDistanceFromPlayer);
-                    if (arrived)
+                        Plan(HasContact ? InterceptionPosition : TargetPosition, maxGoalSearchRadius);
+                    if (Drive(dt, pursuitSpeed))
                     {
-                        FaceTowards(TargetPosition, dt);
-                        if (!DroneHasPlayer)
-                        {
-                            CurrentState = State.Search;
-                            searchTimer = 0;
-                            if (logDecisions) Debug.Log("[Jeep A*] Reached last known position – searching.");
-                        }
+                        if (HasContact) BlockApproach(dt);
+                        else { CurrentState = State.Search; searchTimer = 0; }
                     }
-                    return;
-
+                    break;
                 case State.Search:
-                    Brake(dt);
-                    searchTimer += dt;
+                    Brake(dt); searchTimer += dt;
                     if (searchTimer >= searchSeconds) BeginReturn();
-                    return;
-
+                    break;
                 case State.Return:
-                    if (Drive(dt, returnSpeed, path.Count > 0 ? path[path.Count - 1] : body.position, .35f))
-                        ResumePatrol();
-                    return;
+                    if (path.Count == 0 && Time.time - lastPlanTime >= 1f) BeginReturn();
+                    if (Drive(dt, returnSpeed)) { CurrentState = State.Patrol; AdvancePatrol(); }
+                    break;
             }
+            if (patrol) patrol.ReportNavigation(CurrentSpeed, Vector3.Distance(lastPosition, previous), patrolIndex);
+            lastPosition = previous;
         }
-
+        void Patrol(float dt)
+        {
+            if (!patrol || patrol.waypoints == null || patrol.waypoints.Length == 0) { Brake(dt); return; }
+            patrolIndex = ((patrolIndex % patrol.waypoints.Length) + patrol.waypoints.Length) % patrol.waypoints.Length;
+            if (path.Count == 0 && Time.time - lastPlanTime >= .5f)
+            {
+                var waypoint = patrol.waypoints[patrolIndex];
+                if (!waypoint || !Plan(waypoint.position, 10f)) { AdvancePatrol(); return; }
+            }
+            if (Drive(dt, patrol.speed)) AdvancePatrol();
+        }
+        void AdvancePatrol()
+        {
+            path.Clear(); lastPlanTime = -999f;
+            if (!patrol || patrol.waypoints == null || patrol.waypoints.Length == 0) return;
+            patrolIndex = (patrolIndex + 1) % patrol.waypoints.Length;
+            if (patrolIndex == 1) patrol.RecordCompletedLap();
+        }
         void BeginReturn()
         {
+            CurrentState = State.Return; path.Clear();
             if (!patrol || patrol.waypoints == null || patrol.waypoints.Length == 0)
-            {
-                CurrentState = State.Patrol;
-                return;
-            }
-            // Head for the nearest patrol waypoint, then continue the route from the next one.
-            returnWaypoint = -1;
-            float best = float.PositiveInfinity;
-            for (int i = 0; i < patrol.waypoints.Length; i++)
-            {
-                var w = patrol.waypoints[i];
-                if (!w) continue;
-                float d = Flat(w.position - body.position).sqrMagnitude;
-                if (d < best && grid.IsTraversable(w.position)) { best = d; returnWaypoint = i; }
-            }
-            if (returnWaypoint < 0 || !Plan(patrol.waypoints[returnWaypoint].position, 2f))
-            {
-                searchTimer = searchSeconds * .5f; // try again shortly
-                return;
-            }
-            // Finish exactly on the route point so the patrol can take over without a jump.
-            path[path.Count - 1] = patrol.waypoints[returnWaypoint].position;
-            CurrentState = State.Return;
-            if (logDecisions) Debug.Log($"[Jeep A*] Search over – returning to patrol waypoint {returnWaypoint}.");
+            { CurrentState = State.Patrol; return; }
+            var candidates = new List<int>();
+            for (int i = 0; i < patrol.waypoints.Length; i++) if (patrol.waypoints[i]) candidates.Add(i);
+            candidates.Sort((a, b) => Flat(patrol.waypoints[a].position - body.position).sqrMagnitude.CompareTo(
+                Flat(patrol.waypoints[b].position - body.position).sqrMagnitude));
+            foreach (int candidate in candidates)
+                if (Plan(patrol.waypoints[candidate].position, 10f)) { patrolIndex = candidate; return; }
+            lastPlanTime = Time.time;
         }
-
-        void ResumePatrol()
+        bool Drive(float dt, float maximumSpeed)
         {
-            CurrentState = State.Patrol;
-            path.Clear();
-            if (patrol)
-            {
-                patrol.ResumeAt((returnWaypoint + 1) % patrol.waypoints.Length, CurrentSpeed);
-                patrol.enabled = true;
-            }
-            CurrentSpeed = 0;
-            if (logDecisions) Debug.Log("[Jeep A*] Back on the perimeter road – patrol resumed.");
-        }
-
-        // =====================================================================================
-        // ACT – path following with speed control and collision safety
-        // =====================================================================================
-
-        /// <returns>True when the jeep has stopped at the destination.</returns>
-        bool Drive(float dt, float maxSpeed, Vector3 finalTarget, float stopDistance)
-        {
-            if (path.Count == 0) { Brake(dt); return CurrentSpeed < .05f; }
-
+            // A failed route is not an arrival. Stay stopped and retry instead of skipping the obstacle.
+            if (path.Count == 0) { Brake(dt); return false; }
             Vector3 position = body.position;
-            while (pathIndex < path.Count - 1 && Flat(path[pathIndex] - position).magnitude < waypointRadius)
-                pathIndex++;
-
-            Vector3 toPoint = Flat(path[pathIndex] - position);
-            float pointDistance = toPoint.magnitude;
-
-            // Distance left until the jeep must stand still.
-            float remaining = pointDistance;
+            while (pathIndex < path.Count - 1 && Flat(path[pathIndex] - position).magnitude < Mathf.Min(waypointRadius, .65f)) pathIndex++;
+            Vector3 delta = Flat(path[pathIndex] - position);
+            float distance = delta.magnitude;
+            float remaining = distance;
             for (int i = pathIndex + 1; i < path.Count; i++) remaining += Flat(path[i] - path[i - 1]).magnitude;
-            float toStop = Mathf.Min(remaining, Flat(finalTarget - position).magnitude - stopDistance);
-            if (toStop <= .05f || pointDistance < .05f)
+            if (remaining < .65f && CurrentState == State.Patrol) return true;
+            if (remaining < .45f) { Brake(dt); return CurrentSpeed < .1f; }
+            if (distance < .01f) { Brake(dt); return false; }
+            Vector3 direction = delta / distance;
+            float exitSpeed = 0;
+            if (CurrentState == State.Patrol && patrol && patrol.waypoints != null && patrol.waypoints.Length > 0)
             {
-                Brake(dt);
-                return CurrentSpeed < .05f;
+                var nextWaypoint = patrol.waypoints[(patrolIndex + 1) % patrol.waypoints.Length];
+                if (nextWaypoint)
+                {
+                    float corner = Vector3.Angle(direction, Flat(nextWaypoint.position - path[path.Count - 1]));
+                    exitSpeed = maximumSpeed * Mathf.Lerp(1, cornerSlowdown, Mathf.Clamp01(corner / 90));
+                }
             }
-
-            Vector3 direction = toPoint / pointDistance;
-
-            // Speed planning: brake for the end of the route and for the next corner.
-            float desired = Mathf.Min(maxSpeed, Mathf.Sqrt(2f * braking * toStop));
+            float desired = Mathf.Min(maximumSpeed, Mathf.Sqrt(exitSpeed * exitSpeed + 2f * braking * Mathf.Max(0, remaining - .25f)));
             if (pathIndex < path.Count - 1)
             {
-                Vector3 outgoing = Flat(path[pathIndex + 1] - path[pathIndex]);
-                float corner = outgoing.sqrMagnitude > .001f ? Vector3.Angle(direction, outgoing) : 0f;
-                float cornerSpeed = maxSpeed * Mathf.Lerp(1f, cornerSlowdown, Mathf.Clamp01(corner / 90f));
-                desired = Mathf.Min(desired, Mathf.Sqrt(cornerSpeed * cornerSpeed + 2f * braking * pointDistance));
+                float corner = Vector3.Angle(direction, Flat(path[pathIndex + 1] - path[pathIndex]));
+                float cornerSpeed = maximumSpeed * Mathf.Lerp(1, cornerSlowdown, Mathf.Clamp01(corner / 90));
+                desired = Mathf.Min(desired, Mathf.Sqrt(cornerSpeed * cornerSpeed + 2 * braking * distance));
             }
-            // Slow down while the nose is not yet pointing along the route.
             float heading = Vector3.Angle(Flat(transform.forward), direction);
-            desired *= Mathf.Lerp(1f, .25f, Mathf.Clamp01(heading / 90f));
-
-            // Steering: like a real vehicle, turning is slower at very low speed.
-            float turnRate = turnSpeed * Mathf.Clamp01(.35f + CurrentSpeed / 4f);
-            Quaternion rotation = Quaternion.RotateTowards(body.rotation, Quaternion.LookRotation(direction), turnRate * dt);
-            Vector3 forward = rotation * Vector3.forward;
-
-            // Collision safety: look ahead by braking distance and slow/stop for anything in the way.
-            float brakingDistance = CurrentSpeed * CurrentSpeed / (2f * braking);
-            if (CheckAhead(position, rotation, forward, brakingDistance + obstacleLookAhead + CurrentSpeed * dt, out var hit, out bool isPlayer))
+            if (!grid.IsTraversable(position) && heading > 100)
             {
-                if (isPlayer) { Brake(dt); return true; } // the soldier is right in front: arrived
-                float freeDistance = Mathf.Max(0f, hit.distance - .4f);
-                desired = Mathf.Min(desired, Mathf.Sqrt(2f * braking * freeDistance));
-                BlockedBy = hit.collider.name;
-                if (freeDistance < .3f)
+                // A stopped jeep may be inside an inflated wall margin. Back out without
+                // rotating its rear corners through the wall before joining the safe route.
+                Vector3 reverse = -(body.rotation * Vector3.forward);
+                float step = Mathf.Min(2f, maximumSpeed) * dt;
+                if (!CheckAhead(position, body.rotation, reverse, step + .5f, out _))
                 {
-                    CurrentSpeed = 0;
-                    blockedTimer += dt;
+                    Vector3 retreat = position + reverse * step; retreat.y = GroundHeight(retreat, position.y);
+                    body.MovePosition(retreat); CurrentSpeed = step / dt; return false;
+                }
+            }
+            if (heading > 55) desired = 0;
+            else desired *= Mathf.Lerp(1, .35f, heading / 55);
+            Quaternion rotation = Quaternion.RotateTowards(body.rotation, Quaternion.LookRotation(direction), turnSpeed * dt);
+            Vector3 forward = rotation * Vector3.forward;
+            float lookAhead = CurrentSpeed * CurrentSpeed / (2 * braking) + obstacleLookAhead + CurrentSpeed * dt;
+            if (CheckAhead(position, rotation, forward, lookAhead, out var hit))
+            {
+                float free = Mathf.Max(0, hit.distance - .3f);
+                desired = Mathf.Min(desired, Mathf.Sqrt(2 * braking * free));
+                BlockedBy = hit.collider.name;
+                if (free < .35f)
+                {
+                    CurrentSpeed = 0; blockedTimer += dt;
+                    // Turning in place at a waypoint is safe within the circular grid clearance.
+                    if (RotationClear(position, rotation)) body.MoveRotation(rotation);
                     if (blockedTimer >= blockedReplanSeconds)
                     {
-                        // Unknown obstacle on our route: add it to the map and let A* find a way round.
                         blockedTimer = 0;
-                        if (logDecisions) Debug.Log($"[Jeep A*] Route blocked by '{hit.collider.name}' – marking it and re-planning.");
-                        grid.MarkTemporaryObstacle(hit.collider.bounds, temporaryObstacleSeconds);
-                        Plan(plannedGoal, CurrentState == State.Return ? 2f : maxGoalSearchRadius);
+                        // A combined building collider can span the whole base. Mark the contact
+                        // neighbourhood, not its enormous bounding box (which would erase all routes).
+                        var bounds = hit.collider.bounds;
+                        if (bounds.size.x > 12 || bounds.size.z > 12) bounds = new Bounds(hit.point, new Vector3(2, 2, 2));
+                        grid.MarkTemporaryObstacle(bounds, temporaryObstacleSeconds);
+                        Plan(plannedGoal, CurrentState == State.Patrol || CurrentState == State.Return ? 10 : maxGoalSearchRadius);
                     }
                     return false;
                 }
             }
-            else BlockedBy = "";
-            blockedTimer = 0;
-
-            float rate = desired < CurrentSpeed ? braking : acceleration;
-            CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, desired, rate * dt);
-            Vector3 next = position + forward * (CurrentSpeed * dt);
+            else { BlockedBy = ""; blockedTimer = 0; }
+            CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, desired, (desired < CurrentSpeed ? braking : acceleration) * dt);
+            Vector3 next = position + forward * Mathf.Min(distance, CurrentSpeed * dt);
             next.y = GroundHeight(next, position.y);
-            body.MovePosition(next);
-            body.MoveRotation(rotation);
+            if (!RotationClear(position, rotation)) { CurrentSpeed = 0; return false; }
+            body.MoveRotation(rotation); body.MovePosition(next);
             return false;
         }
-
-        bool CheckAhead(Vector3 position, Quaternion rotation, Vector3 forward, float distance, out RaycastHit result, out bool isPlayer)
+        bool CheckAhead(Vector3 position, Quaternion rotation, Vector3 forward, float distance, out RaycastHit result)
         {
-            result = default; isPlayer = false;
+            result = default;
             if (!footprint) return false;
             Vector3 scale = transform.lossyScale;
             Vector3 size = Vector3.Scale(footprint.size, new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
-            Vector3 center = position + rotation * (Vector3.Scale(footprint.center, scale) + Vector3.up * .25f);
+            Vector3 center = position + rotation * Vector3.Scale(footprint.center, scale) + Vector3.up * .25f;
             Vector3 half = new Vector3(size.x * .5f, size.y * .4f, size.z * .5f);
             float nearest = float.PositiveInfinity;
-            foreach (var hit in Physics.BoxCastAll(center, half, forward, rotation, distance, ~0, QueryTriggerInteraction.Ignore))
+            int count = physicsQuery.BoxCast(center, half, forward, rotation, distance);
+            for (int i = 0; i < count; i++)
             {
-                if (hit.transform.IsChildOf(transform)) continue;
-                if (IsGround(hit.collider) || hit.normal.y > .7f) continue;
-                if (hit.distance < nearest)
-                {
-                    nearest = hit.distance;
-                    result = hit;
-                    isPlayer = IsPlayer(hit.collider);
-                }
+                var hit = physicsQuery.Hits[i];
+                if (hit.transform.IsChildOf(transform) || hit.normal.y > .7f || hit.collider is TerrainCollider) continue;
+                if (grid.roadSurfaces != null && System.Array.IndexOf(grid.roadSurfaces, hit.collider) >= 0 && hit.normal.y > .5f) continue;
+                if (hit.distance >= nearest) continue;
+                nearest = hit.distance; result = hit;
             }
             return nearest < float.PositiveInfinity;
         }
-
-        bool IsGround(Collider c)
+        bool RotationClear(Vector3 position, Quaternion rotation)
         {
-            if (c is TerrainCollider) return true;
-            var surfaces = grid.roadSurfaces;
-            if (surfaces != null) for (int i = 0; i < surfaces.Length; i++) if (surfaces[i] == c) return true;
-            return false;
-        }
-
-        bool IsPlayer(Collider c)
-        {
-            if (!player)
+            if (!footprint) return true;
+            Vector3 scale = transform.lossyScale;
+            Vector3 size = Vector3.Scale(footprint.size, new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
+            Vector3 center = position + rotation * Vector3.Scale(footprint.center, scale) + Vector3.up * .25f;
+            Vector3 half = new Vector3(size.x * .48f, size.y * .4f, size.z * .48f);
+            int count = physicsQuery.OverlapBox(center, half, rotation);
+            for (int i = 0; i < count; i++)
             {
-                var fp = FindAnyObjectByType<FirstPersonController>();
-                if (fp) player = fp.transform;
+                var collider = physicsQuery.Colliders[i];
+                if (collider.transform.IsChildOf(transform) || collider is TerrainCollider || collider.bounds.max.y <= position.y + .35f) continue;
+                return false;
             }
-            return (player && c.transform.IsChildOf(player)) || c.CompareTag("Player");
+            return true;
         }
-
-        float GroundHeight(Vector3 at, float currentY)
+        float GroundHeight(Vector3 position, float currentY)
         {
-            float best = currentY; float bestDelta = float.PositiveInfinity;
-            foreach (var hit in Physics.RaycastAll(at + Vector3.up * 2f, Vector3.down, 4f, ~0, QueryTriggerInteraction.Ignore))
+            float best = currentY, closest = float.PositiveInfinity;
+            int count = physicsQuery.Raycast(position + Vector3.up * 2, Vector3.down, 4);
+            for (int i = 0; i < count; i++)
             {
-                if (hit.transform.IsChildOf(transform) || hit.normal.y < .7f || hit.collider.attachedRigidbody) continue;
+                var hit = physicsQuery.Hits[i];
+                if (hit.transform.IsChildOf(transform) || hit.normal.y < .85f || hit.collider.GetComponentInParent<CombatHealth>()) continue;
+                if (hit.collider.attachedRigidbody && !hit.collider.attachedRigidbody.isKinematic) continue;
                 float delta = Mathf.Abs(hit.point.y - currentY);
-                if (delta < .6f && delta < bestDelta) { bestDelta = delta; best = hit.point.y + .02f; }
+                if (delta < .6f && delta < closest) { closest = delta; best = hit.point.y + .02f; }
             }
             return best;
         }
-
-        void Brake(float dt)
+        void Brake(float dt) { CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, 0, braking * dt); }
+        void BlockApproach(float dt)
         {
-            CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, 0, braking * dt);
-            if (CurrentSpeed > .01f)
-            {
-                Vector3 next = body.position + transform.forward * (CurrentSpeed * dt);
-                next.y = GroundHeight(next, body.position.y);
-                body.MovePosition(next);
-            }
+            if (!mainBuildingEntrance) return;
+            Vector3 approach = Flat(mainBuildingEntrance.position - TargetPosition);
+            if (approach.sqrMagnitude < .1f) return;
+            // Park across the player's route, using the jeep's length as the barrier.
+            Quaternion broadside = Quaternion.LookRotation(Vector3.Cross(Vector3.up, approach).normalized);
+            Quaternion rotation = Quaternion.RotateTowards(body.rotation, broadside, turnSpeed * dt);
+            if (RotationClear(body.position, rotation)) body.MoveRotation(rotation);
         }
-
-        void FaceTowards(Vector3 target, float dt)
-        {
-            Vector3 d = Flat(target - body.position);
-            if (d.sqrMagnitude < .01f || CurrentSpeed > .5f) return;
-            // Kept very slow: a parked vehicle only "creeps" round to watch the player.
-            body.MoveRotation(Quaternion.RotateTowards(body.rotation, Quaternion.LookRotation(d), 20f * dt));
-        }
-
-        static Vector3 Flat(Vector3 v) { v.y = 0; return v; }
-
-        // =====================================================================================
-        // Debug
-        // =====================================================================================
-
+        static Vector3 Flat(Vector3 value) { value.y = 0; return value; }
         void OnDrawGizmosSelected()
         {
-            if (CurrentState == State.Patrol) return;
-            Gizmos.color = CurrentState == State.Pursuit ? Color.red : CurrentState == State.Search ? Color.yellow : Color.cyan;
-            Gizmos.DrawWireSphere(TargetPosition, stopDistanceFromPlayer);
-            if (path.Count > 0 && pathIndex < path.Count)
-                Gizmos.DrawLine(transform.position + Vector3.up, path[pathIndex] + Vector3.up);
+            if (path.Count < 2) return;
+            Gizmos.color = CurrentState == State.Pursuit ? Color.red : Color.green;
+            for (int i = 1; i < path.Count; i++) Gizmos.DrawLine(path[i - 1] + Vector3.up, path[i] + Vector3.up);
         }
-
-        GUIStyle overlayStyle;
         void OnGUI()
         {
-            if (!showStatusOverlay || CurrentState == State.Patrol) return;
-            overlayStyle ??= new GUIStyle(GUI.skin.label) { fontSize = 13, normal = { textColor = new Color(1f, .85f, .3f) } };
-            string text = $"JEEP A*: {CurrentState.ToString().ToUpper()}  |  speed {CurrentSpeed:F1} m/s  |  " +
-                          $"drone contact: {(DroneHasPlayer ? "YES" : "lost")}  |  route {path.Count} pts, " +
-                          $"expanded {grid.LastExpandedNodes}, re-plans {ReplanCount}" +
-                          (string.IsNullOrEmpty(BlockedBy) ? "" : $"  |  yielding to {BlockedBy}");
-            GUI.Label(new Rect(12, Screen.height - 30, Screen.width - 24, 24), text, overlayStyle);
+            if (showStatusOverlay && ready) GUI.Label(new Rect(12, Screen.height - 30, Screen.width - 24, 24),
+                $"JEEP: {CurrentState} | contact: {DroneHasPlayer} | route: {path.Count} | blocked: {BlockedBy}");
         }
     }
 
-    /// <summary>
-    /// Adds the A* pursuit to the existing patrol jeep and the drone message sender to the
-    /// surveillance drone when a scene starts, so no scene file edits are required.
-    /// Use "Operation 1989/Jeep/Install A* Drone Pursuit" to add them permanently instead.
-    /// </summary>
+    /// <summary>Connect the active tactical drone and keep exactly one driver per vehicle.</summary>
     public static class JeepPursuitBootstrap
     {
         public static bool Enabled = true;
-
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Initialise()
         {
-            SceneManager.sceneLoaded -= OnSceneLoaded;
-            SceneManager.sceneLoaded += OnSceneLoaded;
-            InstallAll();
+            SceneManager.sceneLoaded -= OnSceneLoaded; SceneManager.sceneLoaded += OnSceneLoaded; InstallAll();
         }
-
         static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => InstallAll();
-
         public static void InstallAll()
         {
             if (!Enabled) return;
-            bool anyJeep = false;
+            var drones = Object.FindObjectsByType<TacticalDroneController>();
+            if (!Operation1989.AI.InferenceEngine.KnowledgeBase.Instance && !Object.FindAnyObjectByType<Operation1989.AI.InferenceEngine.KnowledgeBase>())
+                new GameObject("Agent Knowledge Base").AddComponent<Operation1989.AI.InferenceEngine.KnowledgeBase>();
+            if (!DroneAlertSystem.Instance)
+            {
+                var existing = Object.FindAnyObjectByType<DroneAlertSystem>();
+                if (!existing) new GameObject("Drone Pursuit Alerts").AddComponent<DroneAlertSystem>();
+            }
+            foreach (var drone in drones)
+                if (drone.isActiveAndEnabled) Connect(drone.gameObject);
+            // Compatibility with the older standalone patrol scene, without enabling its disabled dummy.
+            if (drones.Length == 0)
+                foreach (var drone in Object.FindObjectsByType<DroneMapPatrol>())
+                    if (drone.isActiveAndEnabled) Connect(drone.gameObject);
             foreach (var patrol in Object.FindObjectsByType<BaseRoadJeepPatrol>())
             {
-                anyJeep = true;
-                if (!patrol.GetComponent<JeepAStarPursuit>()) patrol.gameObject.AddComponent<JeepAStarPursuit>();
+                var legacy = patrol.GetComponent<Operation1989.Interaction.Vehicles.JeepPursuitController>();
+                if (legacy) legacy.enabled = false;
+                var pursuit = patrol.GetComponent<JeepAStarPursuit>();
+                if (!pursuit) pursuit = patrol.gameObject.AddComponent<JeepAStarPursuit>();
+                pursuit.enabled = true;
             }
-            if (!anyJeep) return;
-            foreach (var drone in Object.FindObjectsByType<DroneMapPatrol>())
-            {
-                if (!DroneAlertSystem.Instance && !drone.GetComponent<DroneAlertSystem>())
-                    drone.gameObject.AddComponent<DroneAlertSystem>();
-                if (!drone.GetComponent<DronePlayerSurveillance>())
-                    drone.gameObject.AddComponent<DronePlayerSurveillance>();
-            }
+        }
+        static void Connect(GameObject drone)
+        {
+            var legacy = drone.GetComponent<DroneSpotter>();
+            if (legacy) legacy.enabled = false;
+            var surveillance = drone.GetComponent<DronePlayerSurveillance>();
+            if (!surveillance) surveillance = drone.AddComponent<DronePlayerSurveillance>();
+            surveillance.scanInterval = .1f; surveillance.messageInterval = .2f; surveillance.enabled = true;
         }
     }
 }

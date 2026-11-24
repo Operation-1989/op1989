@@ -31,6 +31,7 @@ namespace Operation1989.Interaction
 
         private void Update()
         {
+            if (GamePauseMenu.BlocksInput) return;
             CheckForInteractable();
             HandleInput();
         }

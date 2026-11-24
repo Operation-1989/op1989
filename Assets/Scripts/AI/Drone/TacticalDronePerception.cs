@@ -12,6 +12,7 @@ namespace Operation1989.AI.Drone
     /// obstacle/barricade occlusion checking, and temporal memory decay.
     /// Respects military base boundary fences and cutscene states.
     /// </summary>
+    [DefaultExecutionOrder(-100)]
     [DisallowMultipleComponent]
     public class TacticalDronePerception : MonoBehaviour
     {
@@ -58,8 +59,13 @@ namespace Operation1989.AI.Drone
         private float lastSeenTimestamp = -100f;
         private float lastGunshotTimestamp = -100f;
         private Vector3 previousTargetPos;
+        private float previousTargetTime = -1;
+        private Vector3 sampledVelocity;
         private bool wasPreviouslySpotted = false;
         private DroneDamage damageHandler;
+        private IntroTruckSequence intro;
+        readonly PhysicsQueryBuffer sightQuery = new PhysicsQueryBuffer();
+        [SerializeField] private bool logAcousticDetections;
 
         public Transform TargetPlayer => targetPlayer;
 
@@ -77,12 +83,16 @@ namespace Operation1989.AI.Drone
         private void OnDisable()
         {
             RifleWeapon.OnGunshotFired -= HandleGunshotFired;
+            CanSeePlayer = IsPlayerInCover = IsInShootingRange = false;
             RetractAllPerceptionFacts();
         }
 
         public void SetTargetPlayer(Transform player)
         {
             targetPlayer = player;
+            previousTargetTime = -1; wasPreviouslySpotted = false;
+            lastSeenTimestamp = -100; MemoryConfidence = 0; EstimatedVelocity = Vector3.zero;
+            CanSeePlayer = IsPlayerInCover = IsInShootingRange = false;
         }
 
         private void FindPlayerTarget()
@@ -92,7 +102,8 @@ namespace Operation1989.AI.Drone
             var found = GameObject.FindGameObjectWithTag("Player");
             if (found)
             {
-                targetPlayer = found.transform;
+                var controller = found.GetComponentInParent<FirstPersonController>();
+                targetPlayer = controller ? controller.transform : found.transform;
                 return;
             }
 
@@ -105,6 +116,7 @@ namespace Operation1989.AI.Drone
 
         private void Update()
         {
+            if (GamePauseMenu.IsPaused) return;
             if (damageHandler && damageHandler.Destroyed)
             {
                 CanSeePlayer = false;
@@ -118,6 +130,14 @@ namespace Operation1989.AI.Drone
 
             if (!targetPlayer) FindPlayerTarget();
 
+            sampledVelocity = Vector3.zero;
+            if (targetPlayer)
+            {
+                float elapsed = Time.time - previousTargetTime;
+                if (previousTargetTime >= 0 && elapsed > .0001f && elapsed < .5f)
+                    sampledVelocity = Vector3.ClampMagnitude((targetPlayer.position - previousTargetPos) / elapsed, 12f);
+                previousTargetPos = targetPlayer.position; previousTargetTime = Time.time;
+            }
             UpdateSensoryInputs();
             UpdateMemoryDecay();
             SynchronizeWithKnowledgeBase();
@@ -128,6 +148,8 @@ namespace Operation1989.AI.Drone
         /// </summary>
         private void UpdateSensoryInputs()
         {
+            // Every exit starts with a clean sensor state, including range and cutscene exits.
+            CanSeePlayer = IsPlayerInCover = IsInShootingRange = false;
             if (!targetPlayer)
             {
                 CanSeePlayer = false;
@@ -138,7 +160,7 @@ namespace Operation1989.AI.Drone
             }
 
             // Check 1: Intro Cutscene Gatekeeper
-            var intro = FindAnyObjectByType<IntroTruckSequence>();
+            if (!intro) intro = FindAnyObjectByType<IntroTruckSequence>();
             if (intro && (!intro.HandedOff || !intro.Entered))
             {
                 CanSeePlayer = false;
@@ -164,6 +186,12 @@ namespace Operation1989.AI.Drone
                 return;
             }
 
+            var playerMovement = targetPlayer.GetComponent<FirstPersonController>();
+            if (playerMovement && !playerMovement.isActiveAndEnabled)
+            {
+                Diagnostics = "Player control inactive";
+                return;
+            }
             // Check 3: Player Dead
             var health = targetPlayer.GetComponent<CombatHealth>();
             if (health && health.Dead)
@@ -176,7 +204,8 @@ namespace Operation1989.AI.Drone
             }
 
             Vector3 eyeOrigin = transform.position;
-            Vector3 targetAimPoint = targetPlayer.position + Vector3.up * 1.0f;
+            var targetBody = targetPlayer.GetComponent<CharacterController>();
+            Vector3 targetAimPoint = targetBody ? targetBody.bounds.center : targetPlayer.position + Vector3.up;
             Vector3 delta = targetAimPoint - eyeOrigin;
             float distance = delta.magnitude;
             DistanceToPlayer = distance;
@@ -209,7 +238,9 @@ namespace Operation1989.AI.Drone
             horizontalOffset.y = 0;
             bool insideDownwardCone = (horizontalOffset.magnitude <= downwardConeRadius) && (eyeOrigin.y > targetPlayer.position.y);
 
-            bool withinVisionAngle = insideForwardCone || insideDownwardCone;
+            // Once acquired, the gimballed sensor keeps a lock in any direction within range.
+            // A genuine obstruction still breaks sight; memory alone never produces reports.
+            bool withinVisionAngle = insideForwardCone || insideDownwardCone || wasPreviouslySpotted;
             if (!withinVisionAngle)
             {
                 CanSeePlayer = false;
@@ -222,22 +253,22 @@ namespace Operation1989.AI.Drone
             bool hitCover = false;
             string obstructionName = "";
 
-            var hits = Physics.RaycastAll(eyeOrigin, delta.normalized, distance, obstacleLayers, QueryTriggerInteraction.Ignore);
-            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            int count = sightQuery.Raycast(eyeOrigin, delta.normalized, distance, obstacleLayers);
+            var hits = sightQuery.Hits;
+            Array.Sort(hits, 0, count, PhysicsQueryBuffer.ByDistance);
 
-            foreach (var h in hits)
+            for (int i = 0; i < count; i++)
             {
+                var h = hits[i];
                 // Ignore triggers
                 if (h.collider != null && h.collider.isTrigger) continue;
 
                 // Ignore drone's own colliders and visuals
                 if (h.transform == transform || h.transform.IsChildOf(transform)) continue;
-                if (h.transform.name.IndexOf("Drone", StringComparison.OrdinalIgnoreCase) >= 0) continue;
 
                 // If hit target player or child of target player, line of sight reached!
                 bool isTargetHit = (h.transform == targetPlayer) || 
                                    h.transform.IsChildOf(targetPlayer) || 
-                                   (h.transform.root == targetPlayer.root) || 
                                    h.collider.CompareTag("Player");
 
                 if (isTargetHit)
@@ -264,11 +295,7 @@ namespace Operation1989.AI.Drone
                 lastSeenTimestamp = Time.time;
                 LastKnownPosition = targetPlayer.position;
 
-                if (Time.deltaTime > 0.0001f)
-                {
-                    EstimatedVelocity = (targetPlayer.position - previousTargetPos) / Time.deltaTime;
-                }
-                previousTargetPos = targetPlayer.position;
+                EstimatedVelocity = sampledVelocity;
             }
             else
             {
@@ -283,7 +310,7 @@ namespace Operation1989.AI.Drone
             if (!CanSeePlayer && distance <= acousticFootstepRange)
             {
                 var fpc = targetPlayer.GetComponent<FirstPersonController>();
-                if (fpc != null && (targetPlayer.position - previousTargetPos).magnitude / Mathf.Max(Time.deltaTime, 0.001f) > 3.0f)
+                if (fpc != null && sampledVelocity.magnitude > 3.0f)
                 {
                     LastKnownPosition = targetPlayer.position;
                     lastSeenTimestamp = Time.time;
@@ -297,13 +324,18 @@ namespace Operation1989.AI.Drone
         private void HandleGunshotFired(Vector3 origin)
         {
             // Acoustic gunshot is heard only if origin is inside the base or within perimeter
+            if (!targetPlayer || origin.z < entranceGateZBoundary) return;
+            if (!intro) intro = FindAnyObjectByType<IntroTruckSequence>();
+            if (intro && (!intro.HandedOff || !intro.Entered)) return;
+            // Ignore the guards' gunfire; only player shots should create player evidence.
+            if (Vector3.Distance(origin, targetPlayer.position) > 4f) return;
             float dist = Vector3.Distance(transform.position, origin);
             if (dist <= acousticGunshotRange)
             {
                 HeardGunshot = true;
                 lastGunshotTimestamp = Time.time;
                 LastKnownPosition = origin;
-                Debug.Log($"[Tactical Drone Perception] Acoustic sensor detected gunfire at {origin} (Distance: {dist:F1}m)");
+                if (logAcousticDetections) Debug.Log($"[Tactical Drone Perception] Acoustic sensor detected gunfire at {origin} (Distance: {dist:F1}m)");
             }
         }
 

@@ -79,6 +79,7 @@ namespace Operation1989.Interaction.Core
 
         private void Update()
         {
+            if (GamePauseMenu.BlocksInput) return;
             if (heldObject != null)
             {
                 if (WasPressedThisFrame(throwKey))

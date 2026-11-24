@@ -175,7 +175,7 @@ namespace Operation1989.EditorScripts
                 var fbxInstance = (GameObject)PrefabUtility.InstantiatePrefab(fbxModel, root.transform);
                 fbxInstance.name = "RUKO Drone Visual";
                 fbxInstance.transform.localPosition = Vector3.zero;
-                fbxInstance.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f); // Standard FBX orientation fix
+                fbxInstance.transform.localRotation = Quaternion.identity; // The imported FBX is already Y-up.
                 fbxInstance.transform.localScale = Vector3.one * 0.025f;
                 visual = fbxInstance.transform;
             }

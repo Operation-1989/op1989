@@ -68,6 +68,7 @@ namespace Operation1989.Interaction.Environment
 
         private void Update()
         {
+            if (GamePauseMenu.BlocksInput) return;
             if (!useProximityInput || proximityInteractor == null || Keyboard.current == null ||
                 !Keyboard.current.fKey.wasPressedThisFrame)
                 return;

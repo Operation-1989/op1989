@@ -57,6 +57,7 @@ public sealed class PlayerSoldierPresentation : MonoBehaviour
 
     void Update()
     {
+        if (GamePauseMenu.BlocksInput) return;
         bool controlled = movement && movement.isActiveAndEnabled;
         if (!CanAim || Mouse.current == null) scopeRequested = false;
         else if (toggleScope)
@@ -95,6 +96,7 @@ public sealed class PlayerSoldierPresentation : MonoBehaviour
 
     void LateUpdate()
     {
+        if (GamePauseMenu.BlocksInput) return;
         // Mouse look runs in Update; shoot using this frame's final camera direction.
         FireWeapon();
         Vector3 delta = transform.position - previousPosition;

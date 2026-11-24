@@ -53,6 +53,7 @@ public sealed class IntelTheftMission : MonoBehaviour
     float downloadElapsed;
     GUIStyle title, text, small, marker;
     readonly ObjectiveCompassHud compass = new ObjectiveCompassHud();
+    readonly DroneThreatHud droneThreat = new DroneThreatHud();
     readonly TerminalInteractionPopup terminalPopup = new TerminalInteractionPopup();
     public float CompassHeading
     {
@@ -85,6 +86,7 @@ public sealed class IntelTheftMission : MonoBehaviour
     void Start() { terminalPopup.Initialize(transform); ResetForCheckpoint(); }
     void Update()
     {
+        if (GamePauseMenu.BlocksInput) return;
         if (!player || !terminal || !extraction) { terminalPopup.Hide(); return; }
         if (health && health.Dead) { if (State != Phase.FindComputer) ResetForCheckpoint(); terminalPopup.Hide(); return; }
         if (State == Phase.Downloading)
@@ -121,12 +123,24 @@ public sealed class IntelTheftMission : MonoBehaviour
         if (State != Phase.ReadyToRemove) return false;
         terminalInputFrame = Time.frameCount;
         State = Phase.Escape;
+        RestorePatrolsAfterTheft();
         if (outro) outro.PrepareExtraction();
         terminal.SetUsbInserted(false);
         terminal.RefreshDisplay();
         if (alarm) alarm.SetActive(true);
         extraction.SetMarked(true);
         return true;
+    }
+    void RestorePatrolsAfterTheft()
+    {
+        // Corpses keep their GameObject active, but their patrol component is
+        // disabled. Include those components and leave other scenes/elite guards alone.
+        foreach (var guard in FindObjectsByType<BarricadePatrolSoldier>())
+        {
+            if (guard.gameObject.scene != gameObject.scene) continue;
+            var patrolHealth = guard.GetComponent<CombatHealth>();
+            if (patrolHealth && !patrolHealth.isPlayer) patrolHealth.Restore();
+        }
     }
     public bool TryExtract()
     {
@@ -175,6 +189,7 @@ public sealed class IntelTheftMission : MonoBehaviour
     }
     void OnGUI()
     {
+        if (GamePauseMenu.IsPaused) return;
         if (State == Phase.Extracting) return;
         if (!player || (health && health.Dead) || (intro && (!intro.HandedOff || !intro.Entered))) return;
         int previousDepth = GUI.depth;
@@ -208,6 +223,7 @@ public sealed class IntelTheftMission : MonoBehaviour
         {
             compass.Draw(width, CompassHeading, ObjectiveBearing, ObjectiveDistance,
                 State == Phase.Escape ? ObjectiveGlow.Cyan : ObjectiveGlow.Amber, CompassInstruction);
+            droneThreat.Draw(playerCamera, width, height);
         }
         GUI.matrix = previous;
         GUI.color = previousColor;
@@ -226,5 +242,5 @@ public sealed class IntelTheftMission : MonoBehaviour
         terminalPopup.Show(transform, heading, body, State == Phase.Downloading ? DownloadProgress : -1);
     }
     void OnDisable() => terminalPopup.Hide();
-    void OnDestroy() { compass.Dispose(); terminalPopup.Dispose(); }
+    void OnDestroy() { compass.Dispose(); droneThreat.Dispose(); terminalPopup.Dispose(); }
 }

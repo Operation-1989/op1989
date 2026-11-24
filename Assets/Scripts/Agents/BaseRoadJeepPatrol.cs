@@ -65,7 +65,19 @@ public sealed class BaseRoadJeepPatrol : MonoBehaviour
         return true;
     }
 
-    void FixedUpdate() => StepPatrol(Time.fixedDeltaTime);
+    // The A* driver owns both patrol and pursuit whenever it is present.
+    void FixedUpdate()
+    {
+        var navigator = GetComponent<Operation1989.AI.Jeep.JeepAStarPursuit>();
+        if (navigator && navigator.isActiveAndEnabled) return;
+        StepPatrol(Time.fixedDeltaTime);
+    }
+
+    internal void ReportNavigation(float speedNow, float distance, int nextWaypoint)
+    {
+        CurrentSpeed = speedNow; DistanceTravelled += distance; TargetPoint = nextWaypoint;
+    }
+    internal void RecordCompletedLap() => CompletedLaps++;
 
     // Also permits deterministic route validation in Edit mode, without changing other agents.
     public void StepPatrol(float dt)
