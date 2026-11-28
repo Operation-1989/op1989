@@ -128,6 +128,9 @@ namespace Operation1989.AI.Drone
         private void ExecuteTrackAction()
         {
             if (!perception.CanSeePlayer || !perception.TargetPlayer) return;
+            // Engage player with laser beam fire when spotted
+            if (combat) combat.FireSuppressiveBurst(perception.TargetPlayer);
+
             // Reporting is handled by DronePlayerSurveillance after sensing, independently of flight.
             searchTimer = 0;
             Vector3 target = perception.LastKnownPosition;
